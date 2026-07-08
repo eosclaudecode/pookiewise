@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SplitClone – Ausgaben teilen</title>
+<style>
+  :root {
+    --green: #1cc29f;
+    --green-dark: #14a085;
+    --orange: #ff652f;
+    --bg: #f4f6f5;
+    --card: #ffffff;
+    --text: #24313d;
+    --muted: #7a8a99;
+    --border: #e3e8ec;
+    --red: #d9534f;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+  }
+  header {
+    background: var(--green); color: #fff; padding: 14px 24px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  header h1 { font-size: 20px; font-weight: 700; letter-spacing: .3px; }
+  header .logo { font-size: 22px; }
+  .layout { display: flex; gap: 20px; max-width: 1200px; margin: 20px auto; padding: 0 16px; align-items: flex-start; }
+  .sidebar { width: 240px; flex-shrink: 0; }
+  .main { flex: 1; min-width: 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 12px; }
+  .group-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 10px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; font-weight: 500;
+  }
+  .group-item:hover { background: #eef7f4; }
+  .group-item.active { background: var(--green); color: #fff; }
+  .group-item .del { opacity: 0; font-size: 13px; background: none; border: none; cursor: pointer; color: inherit; padding: 2px 6px; }
+  .group-item:hover .del { opacity: .7; }
+  .group-item .del:hover { opacity: 1; }
+  input, select, button { font: inherit; }
+  input[type=text], input[type=date], input[type=number], select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+    background: #fff; color: var(--text);
+  }
+  input:focus, select:focus { outline: 2px solid var(--green); outline-offset: -1px; border-color: var(--green); }
+  .btn {
+    background: var(--green); color: #fff; border: none; border-radius: 7px;
+    padding: 9px 16px; font-weight: 600; cursor: pointer;
+  }
+  .btn:hover { background: var(--green-dark); }
+  .btn.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .btn.secondary:hover { background: #f0f3f2; }
+  .btn.orange { background: var(--orange); }
+  .btn.small { padding: 5px 10px; font-size: 13px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #4a5a68; }
+  .member-chip {
+    display: inline-flex; align-items: center; gap: 6px; background: #eef7f4;
+    border: 1px solid #cde9e1; border-radius: 20px; padding: 4px 6px 4px 12px; margin: 0 6px 6px 0; font-size: 14px;
+  }
+  .member-chip button { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .member-chip button:hover { color: var(--red); }
+  .participants { border: 1px solid var(--border); border-radius: 7px; padding: 10px; }
+  .participant-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+  .participant-row label { flex: 1; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+  .participant-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--green); }
+  .participant-row .split-input { width: 110px; text-align: right; }
+  .split-hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .split-hint.error { color: var(--red); font-weight: 600; }
+  .expense {
+    display: flex; align-items: center; gap: 12px; padding: 10px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .expense:last-child { border-bottom: none; }
+  .expense .date { width: 44px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.3; flex-shrink: 0; }
+  .expense .date b { display: block; font-size: 16px; color: var(--text); }
+  .expense .desc { flex: 1; min-width: 0; }
+  .expense .desc .title { font-weight: 600; }
+  .expense .desc .sub { font-size: 12.5px; color: var(--muted); }
+  .expense .amount { font-weight: 700; white-space: nowrap; }
+  .expense .amount.settle { color: var(--muted); font-weight: 500; }
+  .expense .actions { display: flex; gap: 4px; }
+  .icon-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 4px; opacity: .55; }
+  .icon-btn:hover { opacity: 1; }
+  .balance-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .balance-row:last-child { border-bottom: none; }
+  .pos { color: var(--green-dark); font-weight: 700; }
+  .neg { color: var(--orange); font-weight: 700; }
+  .zero { color: var(--muted); }
+  .debt-row {
+    display: flex; align-items: center; gap: 8px; padding: 9px 0;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .debt-row:last-child { border-bottom: none; }
+  .debt-row .who { font-weight: 600; }
+  .debt-row .arrow { color: var(--muted); }
+  .debt-row .amt { margin-left: auto; font-weight: 700; }
+  .debt-row .btn { margin-left: 10px; }
+  .empty { color: var(--muted); font-size: 14px; padding: 6px 0; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border);
+    background: #fff; cursor: pointer; font-weight: 600; font-size: 14px;
+  }
+  .tab.active { background: var(--text); color: #fff; border-color: var(--text); }
+  .group-title { font-size: 22px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+  .badge { font-size: 12px; background: #eef7f4; color: var(--green-dark); padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+  .settle-banner { background: #e8f8f3; border: 1px solid #bfe9db; border-radius: 7px; padding: 8px 12px; font-size: 13.5px; margin-bottom: 12px; display: none; }
+  @media (max-width: 760px) {
+    .layout { flex-direction: column; }
+    .sidebar { width: 100%; }
+    .row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<header><span class="logo">➗</span><h1>SplitClone</h1></header>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="card">
+      <h2>Gruppen</h2>
+      <div id="groupList"></div>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="newGroupName" placeholder="Neue Gruppe…" onkeydown="if(event.key==='Enter')addGroup()">
+        <button class="btn" style="flex:0 0 auto" onclick="addGroup()">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main" id="mainArea"></div>
+</div>
+
+<script>
+'use strict';
+
+/* ---------- State & Persistenz ---------- */
+const LS_KEY = 'splitclone_v1';
+let state = { groups: [], activeGroupId: null };
+let activeTab = 'expenses';
+let editingExpenseId = null;
+
+function load() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) state = JSON.parse(raw);
+  } catch (e) { /* kein localStorage verfügbar → nur In-Memory */ }
+  if (!state.groups) state = { groups: [], activeGroupId: null };
+}
+function save() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const fmt = c => (c / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+const esc = s => s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function parseAmount(str) {
+  if (typeof str !== 'string') return NaN;
+  str = str.trim().replace(/\./g, '').replace(',', '.');
+  const v = parseFloat(str);
+  return isNaN(v) ? NaN : Math.round(v * 100);
+}
+const activeGroup = () => state.groups.find(g => g.id === state.activeGroupId) || null;
+const memberName = (g, id) => (g.members.find(m => m.id === id) || { name: '?' }).name;
+
+/* ---------- Gruppen ---------- */
+function addGroup() {
+  const inp = document.getElementById('newGroupName');
+  const name = inp.value.trim();
+  if (!name) return;
+  const g = { id: uid(), name, members: [], expenses: [] };
+  state.groups.push(g);
+  state.activeGroupId = g.id;
+  inp.value = '';
+  activeTab = 'members';
+  save(); render();
+}
+function selectGroup(id) { state.activeGroupId = id; editingExpenseId = null; save(); render(); }
+function deleteGroup(id, ev) {
+  ev.stopPropagation();
+  const g = state.groups.find(x => x.id === id);
+  if (!confirm(`Gruppe „${g.name}" mit allen Zahlungen löschen?`)) return;
+  state.groups = state.groups.filter(x => x.id !== id);
+  if (state.activeGroupId === id) state.activeGroupId = state.groups[0]?.id || null;
+  save(); render();
+}
+
+/* ---------- Mitglieder ---------- */
+function addMember() {
+  const g = activeGroup(); if (!g) return;
+  const inp = document.getElementById('newMemberName');
+  const name = inp.value.trim();
+  if (!name) return;
+  if (g.members.some(m => m.name.toLowerCase() === name.toLowerCase())) { alert('Name existiert bereits in der Gruppe.'); return; }
+  g.members.push({ id: uid(), name });
+  inp.value = '';
+  save(); render();
+  document.getElementById('newMemberName')?.focus();
+}
+function removeMember(id) {
+  const g = activeGroup(); if (!g) return;
+  const used = g.expenses.some(e => e.payerId === id || e.shares.some(s => s.memberId === id));
+  if (used) { alert('Mitglied ist an Zahlungen beteiligt und kann nicht entfernt werden. Lösche zuerst die betreffenden Zahlungen.'); return; }
+  g.members = g.members.filter(m => m.id !== id);
+  save(); render();
+}
+
+/* ---------- Zahlungen ---------- */
+function computeEqualShares(amountCents, memberIds) {
+  const n = memberIds.length;
+  const base = Math.floor(amountCents / n);
+  let rest = amountCents - base * n;
+  return memberIds.map(id => ({ memberId: id, cents: base + (rest-- > 0 ? 1 : 0) }));
+}
+function computeShareSplit(amountCents, entries) { // entries: [{memberId, weight}]
+  const total = entries.reduce((s, e) => s + e.weight, 0);
+  let assigned = 0;
+  const res = entries.map((e, i) => {
+    let c;
+    if (i === entries.length - 1) c = amountCents - assigned;
+    else { c = Math.round(amountCents * e.weight / total); assigned += c; }
+    return { memberId: e.memberId, cents: c };
+  });
+  return res;
+}
+
+function submitExpense() {
+  const g = activeGroup(); if (!g) return;
+  const desc = document.getElementById('expDesc').value.trim();
+  const amount = parseAmount(document.getElementById('expAmount').value);
+  const payerId = document.getElementById('expPayer').value;
+  const date = document.getElementById('expDate').value || new Date().toISOString().slice(0, 10);
+  const mode = document.getElementById('expMode').value;
+
+  if (!desc) return alert('Bitte eine Beschreibung eingeben.');
+  if (isNaN(amount) || amount <= 0) return alert('Bitte einen gültigen Betrag eingeben (z. B. 12,50).');
+  if (!payerId) return alert('Bitte auswählen, wer bezahlt hat.');
+
+  const checked = [...document.querySelectorAll('.p-check:checked')].map(cb => cb.dataset.mid);
+  if (checked.length === 0) return alert('Bitte mindestens eine beteiligte Person auswählen.');
+
+  let shares;
+  if (mode === 'equal') {
+    shares = computeEqualShares(amount, checked);
+  } else if (mode === 'exact') {
+    shares = [];
+    let sum = 0;
+    for (const mid of checked) {
+      const v = parseAmount(document.querySelector(`.p-val[data-mid="${mid}"]`).value);
+      if (isNaN(v) || v < 0) return alert(`Ungültiger Betrag bei ${memberName(g, mid)}.`);
+      shares.push({ memberId: mid, cents: v });
+      sum += v;
+    }
+    if (sum !== amount) return alert(`Die Einzelbeträge (${fmt(sum)}) müssen den Gesamtbetrag (${fmt(amount)}) ergeben.`);
+  } else { // shares
+    const entries = [];
+    for (const mid of checked) {
+      const w = parseFloat((document.querySelector(`.p-val[data-mid="${mid}"]`).value || '').replace(',', '.'));
+      if (isNaN(w) || w <= 0) return alert(`Ungültiger Anteil bei ${memberName(g, mid)}.`);
+      entries.push({ memberId: mid, weight: w });
+    }
+    shares = computeShareSplit(amount, entries);
+  }
+
+  const exp = { id: editingExpenseId || uid(), type: 'expense', desc, amountCents: amount, payerId, date, mode, shares };
+  if (editingExpenseId) {
+    const i = g.expenses.findIndex(e => e.id === editingExpenseId);
+    if (i >= 0) g.expenses[i] = exp;
+    editingExpenseId = null;
+  } else {
+    g.expenses.push(exp);
+  }
+  g.expenses.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  save();
+  activeTab = 'expenses';
+  render();
+}
+
+function submitSettlement(fromId, toId, cents) {
+  const g = activeGroup(); if (!g) return;
+  let from = fromId, to = toId, amt = cents;
+  if (!from) {
+    from = document.getElementById('setFrom').value;
+    to = document.getElementById('setTo').value;
+    amt = parseAmount(document.getElementById('setAmount').value);
+    if (from === to) return alert('Zahler und Empfänger müssen verschieden sein.');
+    if (isNaN(amt) || amt <= 0) return alert('Bitte einen gültigen Betrag eingeben.');
+  }
+  g.expenses.push({
+    id: uid(), type: 'settlement',
+    desc: 'Ausgleichszahlung', amountCents: amt, payerId: from,
+    date: new Date().toISOString().slice(0, 10), mode: 'exact',
+    shares: [{ memberId: to, cents: amt }]
+  });
+  g.expenses.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  save(); render();
+}
+
+function deleteExpense(id) {
+  const g = activeGroup(); if (!g) return;
+  if (!confirm('Diese Zahlung löschen?')) return;
+  g.expenses = g.expenses.filter(e => e.id !== id);
+  if (editingExpenseId === id) editingExpenseId = null;
+  save(); render();
+}
+function editExpense(id) {
+  editingExpenseId = id;
+  activeTab = 'add';
+  render();
+}
+function cancelEdit() { editingExpenseId = null; activeTab = 'expenses'; render(); }
+
+/* ---------- Salden & Schulden ---------- */
+function balances(g) {
+  const b = {};
+  g.members.forEach(m => b[m.id] = 0);
+  for (const e of g.expenses) {
+    b[e.payerId] += e.amountCents;
+    for (const s of e.shares) b[s.memberId] -= s.cents;
+  }
+  return b;
+}
+function simplifyDebts(b) {
+  const creditors = [], debtors = [];
+  for (const [id, v] of Object.entries(b)) {
+    if (v > 0) creditors.push({ id, v });
+    else if (v < 0) debtors.push({ id, v: -v });
+  }
+  creditors.sort((a, b2) => b2.v - a.v);
+  debtors.sort((a, b2) => b2.v - a.v);
+  const res = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const x = Math.min(debtors[i].v, creditors[j].v);
+    res.push({ from: debtors[i].id, to: creditors[j].id, cents: x });
+    debtors[i].v -= x; creditors[j].v -= x;
+    if (debtors[i].v === 0) i++;
+    if (creditors[j].v === 0) j++;
+  }
+  return res;
+}
+
+/* ---------- Rendering ---------- */
+function render() {
+  renderSidebar();
+  renderMain();
+}
+function renderSidebar() {
+  const el = document.getElementById('groupList');
+  if (state.groups.length === 0) { el.innerHTML = '<div class="empty">Noch keine Gruppen.</div>'; return; }
+  el.innerHTML = state.groups.map(g => `
+    <div class="group-item ${g.id === state.activeGroupId ? 'active' : ''}" onclick="selectGroup('${g.id}')">
+      <span>${esc(g.name)}</span>
+      <button class="del" title="Gruppe löschen" onclick="deleteGroup('${g.id}', event)">✕</button>
+    </div>`).join('');
+}
+
+function renderMain() {
+  const el = document.getElementById('mainArea');
+  const g = activeGroup();
+  if (!g) {
+    el.innerHTML = `<div class="card"><h2>Willkommen</h2>
+      <p style="font-size:14.5px;line-height:1.6">Lege links eine Gruppe an (z.&nbsp;B. „WG" oder „Italien-Urlaub"),
+      füge Mitglieder hinzu und trage Zahlungen ein. SplitClone rechnet aus, wer wem wie viel schuldet.
+      Alle Daten bleiben lokal in deinem Browser gespeichert.</p></div>`;
+    return;
+  }
+  const tabs = [
+    ['expenses', 'Zahlungen'],
+    ['add', editingExpenseId ? 'Zahlung bearbeiten' : '+ Zahlung eintragen'],
+    ['balances', 'Wer schuldet wem?'],
+    ['members', `Mitglieder (${g.members.length})`],
+  ];
+  let html = `<div class="group-title">${esc(g.name)}
+      <span class="badge">${g.expenses.filter(e=>e.type==='expense').length} Ausgaben · ${fmt(g.expenses.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amountCents,0))}</span>
+    </div>
+    <div class="tabs">${tabs.map(([k, label]) =>
+      `<button class="tab ${activeTab === k ? 'active' : ''}" onclick="activeTab='${k}';editingExpenseId=${k==='add'?'editingExpenseId':'null'};render()">${label}</button>`).join('')}
+    </div>`;
+
+  if (activeTab === 'members') html += renderMembers(g);
+  else if (activeTab === 'add') html += renderForm(g);
+  else if (activeTab === 'balances') html += renderBalances(g);
+  else html += renderExpenses(g);
+
+  el.innerHTML = html;
+  if (activeTab === 'add') initForm(g);
+}
+
+function renderMembers(g) {
+  return `<div class="card"><h2>Mitglieder</h2>
+    <div>${g.members.length ? g.members.map(m =>
+      `<span class="member-chip">${esc(m.name)}<button title="Entfernen" onclick="removeMember('${m.id}')">✕</button></span>`).join('')
+      : '<div class="empty">Noch keine Mitglieder – füge unten welche hinzu.</div>'}</div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="newMemberName" placeholder="Name…" onkeydown="if(event.key==='Enter')addMember()">
+      <button class="btn" style="flex:0 0 auto" onclick="addMember()">Hinzufügen</button>
+    </div></div>`;
+}
+
+function renderExpenses(g) {
+  if (g.members.length < 2) return `<div class="card"><div class="empty">Füge zuerst mindestens zwei Mitglieder hinzu (Tab „Mitglieder").</div></div>`;
+  if (g.expenses.length === 0) return `<div class="card"><div class="empty">Noch keine Zahlungen. Trage die erste über „+ Zahlung eintragen" ein.</div></div>`;
+  const rows = [...g.expenses].reverse().map(e => {
+    const d = new Date(e.date + 'T00:00:00');
+    const day = d.getDate(), mon = d.toLocaleString('de-DE', { month: 'short' });
+    if (e.type === 'settlement') {
+      return `<div class="expense">
+        <div class="date">${mon}<b>${day}</b></div>
+        <div class="desc"><div class="title">💸 Ausgleichszahlung</div>
+          <div class="sub">${esc(memberName(g, e.payerId))} → ${esc(memberName(g, e.shares[0].memberId))}</div></div>
+        <div class="amount settle">${fmt(e.amountCents)}</div>
+        <div class="actions"><button class="icon-btn" title="Löschen" onclick="deleteExpense('${e.id}')">🗑️</button></div>
+      </div>`;
+    }
+    const modeLabel = { equal: 'gleichmäßig', exact: 'exakte Beträge', shares: 'nach Anteilen' }[e.mode];
+    return `<div class="expense">
+      <div class="date">${mon}<b>${day}</b></div>
+      <div class="desc"><div class="title">${esc(e.desc)}</div>
+        <div class="sub">${esc(memberName(g, e.payerId))} hat bezahlt · ${e.shares.length} Beteiligte · ${modeLabel}</div></div>
+      <div class="amount">${fmt(e.amountCents)}</div>
+      <div class="actions">
+        <button class="icon-btn" title="Bearbeiten" onclick="editExpense('${e.id}')">✏️</button>
+        <button class="icon-btn" title="Löschen" onclick="deleteExpense('${e.id}')">🗑️</button>
+      </div></div>`;
+  }).join('');
+  return `<div class="card"><h2>Alle Zahlungen</h2>${rows}</div>`;
+}
+
+function renderForm(g) {
+  if (g.members.length < 2) return `<div class="card"><div class="empty">Füge zuerst mindestens zwei Mitglieder hinzu (Tab „Mitglieder").</div></div>`;
+  const editing = editingExpenseId ? g.expenses.find(e => e.id === editingExpenseId) : null;
+  const payerOpts = g.members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+  return `<div class="card">
+    <h2>${editing ? 'Zahlung bearbeiten' : 'Neue Zahlung'}</h2>
+    <div class="field"><label>Beschreibung</label>
+      <input type="text" id="expDesc" placeholder="z. B. Supermarkt, Pizza, Hotel…"></div>
+    <div class="row">
+      <div class="field"><label>Betrag (€)</label>
+        <input type="text" id="expAmount" inputmode="decimal" placeholder="0,00" oninput="updateSplitHint()"></div>
+      <div class="field"><label>Bezahlt von</label>
+        <select id="expPayer"><option value="">– wählen –</option>${payerOpts}</select></div>
+      <div class="field"><label>Datum</label>
+        <input type="date" id="expDate"></div>
+    </div>
+    <div class="field"><label>Aufteilung</label>
+      <select id="expMode" onchange="renderParticipants()">
+        <option value="equal">Gleichmäßig</option>
+        <option value="exact">Exakte Beträge</option>
+        <option value="shares">Nach Anteilen</option>
+      </select></div>
+    <div class="field"><label>Beteiligte</label>
+      <div class="participants" id="participants"></div>
+      <div class="split-hint" id="splitHint"></div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="submitExpense()">${editing ? 'Änderungen speichern' : 'Zahlung speichern'}</button>
+      ${editing ? '<button class="btn secondary" onclick="cancelEdit()">Abbrechen</button>' : ''}
+    </div>
+  </div>
+  <div class="card">
+    <h2>Ausgleichszahlung erfassen</h2>
+    <div class="row" style="align-items:flex-end">
+      <div class="field" style="margin-bottom:0"><label>Von</label><select id="setFrom">${payerOpts}</select></div>
+      <div class="field" style="margin-bottom:0"><label>An</label><select id="setTo">${payerOpts}</select></div>
+      <div class="field" style="margin-bottom:0"><label>Betrag (€)</label><input type="text" id="setAmount" inputmode="decimal" placeholder="0,00"></div>
+      <button class="btn orange" style="flex:0 0 auto" onclick="submitSettlement()">Erfassen</button>
+    </div>
+  </div>`;
+}
+
+function initForm(g) {
+  const editing = editingExpenseId ? g.expenses.find(e => e.id === editingExpenseId) : null;
+  document.getElementById('expDate').value = editing ? editing.date : new Date().toISOString().slice(0, 10);
+  if (editing) {
+    document.getElementById('expDesc').value = editing.desc;
+    document.getElementById('expAmount').value = (editing.amountCents / 100).toFixed(2).replace('.', ',');
+    document.getElementById('expPayer').value = editing.payerId;
+    document.getElementById('expMode').value = editing.mode;
+  }
+  renderParticipants(editing);
+}
+
+function renderParticipants(editing) {
+  const g = activeGroup(); if (!g) return;
+  editing = editing || (editingExpenseId ? g.expenses.find(e => e.id === editingExpenseId) : null);
+  const mode = document.getElementById('expMode').value;
+  const prev = {};
+  document.querySelectorAll('.p-check').forEach(cb => prev[cb.dataset.mid] = cb.checked);
+  const hasPrev = Object.keys(prev).length > 0;
+
+  document.getElementById('participants').innerHTML = g.members.map(m => {
+    let checkedAttr, val = '';
+    if (hasPrev) checkedAttr = prev[m.id] ? 'checked' : '';
+    else if (editing) {
+      const sh = editing.shares.find(s => s.memberId === m.id);
+      checkedAttr = sh ? 'checked' : '';
+      if (sh && mode === 'exact' && editing.mode === 'exact') val = (sh.cents / 100).toFixed(2).replace('.', ',');
+    } else checkedAttr = 'checked';
+    const input = mode === 'equal' ? '' :
+      `<input type="text" class="split-input p-val" data-mid="${m.id}" inputmode="decimal"
+        placeholder="${mode === 'exact' ? '0,00 €' : 'Anteile'}" value="${val}" oninput="updateSplitHint()">`;
+    return `<div class="participant-row">
+      <label><input type="checkbox" class="p-check" data-mid="${m.id}" ${checkedAttr} onchange="updateSplitHint()">${esc(m.name)}</label>
+      ${input}</div>`;
+  }).join('');
+  updateSplitHint();
+}
+
+function updateSplitHint() {
+  const hint = document.getElementById('splitHint'); if (!hint) return;
+  const g = activeGroup();
+  const mode = document.getElementById('expMode').value;
+  const amount = parseAmount(document.getElementById('expAmount').value);
+  const checked = [...document.querySelectorAll('.p-check:checked')].map(cb => cb.dataset.mid);
+  hint.classList.remove('error');
+  if (checked.length === 0) { hint.textContent = 'Keine Person ausgewählt.'; hint.classList.add('error'); return; }
+  if (mode === 'equal') {
+    hint.textContent = isNaN(amount) ? `${checked.length} Beteiligte – Betrag wird gleichmäßig geteilt.` :
+      `${fmt(Math.round(amount / checked.length))} pro Person (${checked.length} Beteiligte).`;
+  } else if (mode === 'exact') {
+    let sum = 0, ok = true;
+    checked.forEach(mid => {
+      const v = parseAmount(document.querySelector(`.p-val[data-mid="${mid}"]`).value);
+      if (isNaN(v)) ok = false; else sum += v;
+    });
+    if (!ok) hint.textContent = 'Trage für jede beteiligte Person einen Betrag ein.';
+    else if (!isNaN(amount) && sum !== amount) { hint.textContent = `Summe ${fmt(sum)} ≠ Gesamtbetrag ${fmt(amount)} (Differenz ${fmt(amount - sum)}).`; hint.classList.add('error'); }
+    else hint.textContent = `Summe: ${fmt(sum)} ✓`;
+  } else {
+    let total = 0, ok = true;
+    checked.forEach(mid => {
+      const w = parseFloat((document.querySelector(`.p-val[data-mid="${mid}"]`).value || '').replace(',', '.'));
+      if (isNaN(w) || w <= 0) ok = false; else total += w;
+    });
+    hint.textContent = ok ? `Gesamt ${total} Anteile – z. B. 2 Anteile = doppelter Betrag.` : 'Trage für jede beteiligte Person eine Anteilszahl ein (z. B. 1, 2, 0,5).';
+  }
+}
+
+function renderBalances(g) {
+  if (g.members.length < 2) return `<div class="card"><div class="empty">Füge zuerst mindestens zwei Mitglieder hinzu.</div></div>`;
+  const b = balances(g);
+  const debts = simplifyDebts(b);
+  const balHtml = g.members.map(m => {
+    const v = b[m.id];
+    const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero';
+    const label = v > 0 ? 'bekommt' : v < 0 ? 'schuldet' : 'ausgeglichen';
+    return `<div class="balance-row"><span>${esc(m.name)}</span>
+      <span class="${cls}">${label !== 'ausgeglichen' ? label + ' ' : ''}${v === 0 ? '±0,00 €' : fmt(Math.abs(v))}</span></div>`;
+  }).join('');
+  const debtHtml = debts.length === 0
+    ? '<div class="empty">🎉 Alles ausgeglichen – niemand schuldet jemandem etwas.</div>'
+    : debts.map(d => `<div class="debt-row">
+        <span class="who">${esc(memberName(g, d.from))}</span><span class="arrow">schuldet</span>
+        <span class="who">${esc(memberName(g, d.to))}</span>
+        <span class="amt neg">${fmt(d.cents)}</span>
+        <button class="btn small orange" onclick="submitSettlement('${d.from}','${d.to}',${d.cents})">Als beglichen markieren</button>
+      </div>`).join('');
+  return `<div class="card"><h2>Vereinfachte Schulden</h2>${debtHtml}</div>
+    <div class="card"><h2>Saldo pro Person</h2>${balHtml}</div>`;
+}
+
+load();
+render();
+</script>
+</body>
+</html>
