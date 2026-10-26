@@ -1,0 +1,59 @@
+rules_version = '2';
+// PookieWise – in der Firebase-Konsole unter Firestore → Regeln einfügen und veröffentlichen.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMemberOf(gid) {
+      return signedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.memberUids;
+    }
+    function validGroup(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 80
+        && d.kind in ['event', 'recurring']
+        && d.members is list && d.members.size() <= 50
+        && d.memberUids is list && d.memberUids.size() <= 20
+        && d.inviteCode is string && d.inviteCode.size() >= 16
+        && d.potEnabled is bool
+        && d.potTargetCents is int && d.potTargetCents >= 0;
+    }
+    function validExpense(d) {
+      return d.type in ['expense', 'contribution', 'potExpense', 'settlement']
+        && d.amountCents is int && d.amountCents > 0 && d.amountCents < 100000000
+        && d.desc is string && d.desc.size() <= 200
+        && d.payerId is string
+        && d.shares is list && d.shares.size() > 0 && d.shares.size() <= 50
+        && d.date is string && d.date.size() == 10
+        && d.createdBy == request.auth.uid;
+    }
+
+    match /groups/{gid} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid]
+        && validGroup(request.resource.data);
+
+      allow update: if signedIn()
+        && validGroup(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && (
+          // Mitglieder dürfen die Gruppe bearbeiten
+          request.auth.uid in resource.data.memberUids
+          // Beitritt per Einladungslink: nur sich selbst hinzufügen, mit gültigem Code
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'joinCode'])
+              && request.resource.data.joinCode == resource.data.inviteCode
+              && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+              && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
+              && request.auth.uid in request.resource.data.memberUids)
+        );
+
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+
+      match /expenses/{eid} {
+        allow read, delete: if isMemberOf(gid);
+        allow create, update: if isMemberOf(gid) && validExpense(request.resource.data);
+      }
+    }
+  }
+}
