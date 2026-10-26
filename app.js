@@ -63,7 +63,12 @@ async function boot() {
   try {
     db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) });
   } catch { db = fs.getFirestore(app); }
-  authM.getRedirectResult(auth).catch(loginError);
+  // Die Google-Weiterleitung scheitert in manchen Browsern still (Drittanbieter-Speicher blockiert)
+  const redirected = ssGet('pw_redirect');
+  ssSet('pw_redirect', null);
+  authM.getRedirectResult(auth).then(r => {
+    if (redirected && !r && !auth.currentUser) loginError('Die Google-Anmeldung ist in diesem Browser nicht durchgekommen. Erlaube Pop-ups für diese Seite oder nutze den Anmeldelink per Mail.');
+  }).catch(loginError);
   S.emailLink = authM.isSignInWithEmailLink(auth, location.href);
   if (S.emailLink) await completeEmailLink(lsGet('pw_email'));
   else cleanUrl();
@@ -96,6 +101,7 @@ async function login() {
     await authM.signInWithPopup(auth, provider);
   } catch (err) {
     if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
+      ssSet('pw_redirect', '1');
       return authM.signInWithRedirect(auth, provider);
     }
     if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') loginError(err);
@@ -183,17 +189,25 @@ async function processJoin() {
   }
 }
 
-function subscribeExpenses() {
-  if (S.expensesFor === S.activeGroupId) return;
+// Direkt nach Anlegen oder Beitritt kennt der Server die Mitgliedschaft evtl. noch nicht;
+// die Regeln lehnen dann ab, also nach kurzer Pause erneut abonnieren.
+function subscribeExpenses(attempt = 0) {
+  if (S.expensesFor === S.activeGroupId && !attempt) return;
   unsubExp?.(); unsubExp = null;
-  S.expenses = []; S.expensesFor = S.activeGroupId;
+  if (!attempt) S.expenses = [];
+  S.expensesFor = S.activeGroupId;
   if (!S.activeGroupId) return;
   const gid = S.activeGroupId;
   unsubExp = fs.onSnapshot(expCol(gid), snap => {
     S.expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1);
     softRender();
-  }, err => { if (S.activeGroupId === gid) toast('Zahlungen konnten nicht geladen werden: ' + (err.code || err.message)); });
+  }, err => {
+    if (S.activeGroupId !== gid) return;
+    if (err.code === 'permission-denied' && attempt < 6) {
+      setTimeout(() => { if (S.activeGroupId === gid) subscribeExpenses(attempt + 1); }, 500 * 2 ** attempt);
+    } else toast('Zahlungen konnten nicht geladen werden: ' + (err.code || err.message));
+  });
 }
 
 /* ---------- Helfer ---------- */

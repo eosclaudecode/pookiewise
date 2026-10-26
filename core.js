@@ -110,7 +110,7 @@ export function simplifyDebts(b) {
   }
   return res;
 }
-export const potCash = expenses => -(balances([POT], expenses)[POT] || 0);
+export const potCash = expenses => 0 - (balances([POT], expenses)[POT] || 0);
 // Trennt Buchungen mit Kassenbezug von denen zwischen Personen. Salden aus personTx ergeben
 // „wer schuldet wem“, Salden aus potTx den Anteil jeder Person am Kassenstand.
 export const involvesPot = e => e.payerId === POT || e.shares.some(s => s.memberId === POT);
