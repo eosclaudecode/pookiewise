@@ -64,17 +64,22 @@ async function boot() {
     db = fs.initializeFirestore(app, { localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() }) });
   } catch { db = fs.getFirestore(app); }
   authM.getRedirectResult(auth).catch(loginError);
+  S.emailLink = authM.isSignInWithEmailLink(auth, location.href);
+  if (S.emailLink) await completeEmailLink(lsGet('pw_email'));
+  else cleanUrl();
   authM.onAuthStateChanged(auth, user => {
     S.user = user;
     if (user) startApp(); else stopApp();
   });
 }
 
+// Einladung kommt als #join=… (Link aus der App) oder ?join=… (Rückkehr aus dem Mail-Link)
 function captureJoinHash() {
-  const m = location.hash.match(/^#join=([\w-]+)\.([\w-]+)$/);
-  if (!m) return;
-  ssSet('pw_join', m[1] + '.' + m[2]);
-  history.replaceState(null, '', location.pathname + location.search);
+  const token = location.hash.match(/^#join=([\w-]+\.[\w-]+)$/)?.[1] || new URLSearchParams(location.search).get('join');
+  if (token && /^[\w-]+\.[\w-]+$/.test(token)) ssSet('pw_join', token);
+}
+function cleanUrl() {
+  if (location.hash.startsWith('#join=') || location.search) history.replaceState(null, '', location.pathname);
 }
 
 function loginError(err) {
@@ -94,6 +99,42 @@ async function login() {
       return authM.signInWithRedirect(auth, provider);
     }
     if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') loginError(err);
+  }
+}
+
+async function emailLogin() {
+  const email = $('loginEmail').value.trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return loginError('Bitte eine gültige E-Mail-Adresse eingeben.');
+  if (S.emailLink) return completeEmailLink(email);
+  const join = ssGet('pw_join');
+  const url = location.origin + location.pathname + (join ? '?join=' + encodeURIComponent(join) : '');
+  try {
+    await authM.sendSignInLinkToEmail(auth, email, { url, handleCodeInApp: true });
+    lsSet('pw_email', email);
+    $('loginError').hidden = true;
+    $('loginText').textContent = `Wir haben dir einen Anmeldelink an ${email} geschickt. Öffne ihn auf diesem Gerät, um dich anzumelden. Schau notfalls im Spam-Ordner nach.`;
+  } catch (err) { loginError(err); }
+}
+
+// Rückkehr aus dem Mail-Link. Ohne gespeicherte Adresse (anderes Gerät) muss sie bestätigt werden.
+async function completeEmailLink(email) {
+  if (!email) {
+    show('Login');
+    $('loginText').textContent = 'Fast geschafft: Bitte bestätige die E-Mail-Adresse, an die der Anmeldelink ging.';
+    $('emailBtn').textContent = 'Anmelden';
+    return;
+  }
+  try {
+    await authM.signInWithEmailLink(auth, email, location.href);
+    lsSet('pw_email', null);
+    S.emailLink = false;
+    cleanUrl();
+  } catch (err) {
+    S.emailLink = false;
+    cleanUrl();
+    show('Login');
+    loginError(err.code === 'auth/invalid-action-code' || err.code === 'auth/expired-action-code'
+      ? 'Der Anmeldelink ist abgelaufen oder wurde schon benutzt. Fordere einfach einen neuen an.' : err);
   }
 }
 
@@ -117,6 +158,7 @@ function startApp() {
 }
 
 function stopApp() {
+  if (S.emailLink) return; // wartet auf Bestätigung der Adresse
   unsubGroups?.(); unsubExp?.();
   unsubGroups = unsubExp = null;
   Object.assign(S, { groups: [], expenses: [], expensesFor: null });
@@ -161,6 +203,7 @@ const activeGroup = () => S.groups.find(g => g.id === S.activeGroupId) || null;
 const memberName = (g, id) => id === POT ? '🏦 Kasse' : (g.members.find(m => m.id === id) || { name: '?' }).name;
 const myMember = g => g.members.find(m => m.uid === S.user.uid) || null;
 const isRecurring = g => g.kind === 'recurring';
+const firstName = () => S.user.displayName?.split(' ')[0] || (S.user.email || '').split('@')[0].split(/[._-]/)[0].replace(/^./, c => c.toUpperCase());
 const periodWord = g => isRecurring(g) ? (g.period === 'week' ? 'Woche' : 'Monat') : 'Ereignis';
 function cursor(g) { return S.cursor[g.id] || (S.cursor[g.id] = C.periodKey(C.today(), g.period)); }
 function visibleExpenses(g) {
@@ -204,7 +247,7 @@ function readGroupForm() {
 
 function createGroup() {
   const data = readGroupForm(); if (!data) return;
-  const myName = ($('gMyName').value.trim() || S.user.displayName || 'Ich').slice(0, 40);
+  const myName = ($('gMyName').value.trim() || firstName() || 'Ich').slice(0, 40);
   const ref = fs.doc(fs.collection(db, 'groups'));
   write(fs.setDoc(ref, {
     ...data,
@@ -253,7 +296,7 @@ function claimMember(memberId) {
   let members;
   if (memberId) members = g.members.map(m => m.id === memberId ? { ...m, uid: S.user.uid } : m);
   else {
-    const name = ($('claimName').value.trim() || S.user.displayName || 'Ich').slice(0, 40);
+    const name = ($('claimName').value.trim() || firstName() || 'Ich').slice(0, 40);
     if (g.members.some(m => m.name.toLowerCase() === name.toLowerCase())) return alert('Name existiert bereits in der Gruppe – wähle ihn oben aus oder nimm einen anderen.');
     members = [...g.members, { id: C.uid(), name, uid: S.user.uid }];
   }
@@ -420,7 +463,7 @@ async function migrate() {
 
 /* ---------- Ereignis-Verdrahtung (keine Inline-Handler) ---------- */
 const actions = {
-  login, newGroup: () => { S.view = 'newGroup'; S.editingId = null; render(); },
+  login, emailLogin, newGroup: () => { S.view = 'newGroup'; S.editingId = null; render(); },
   cancelNewGroup: () => { S.view = null; render(); },
   createGroup, saveSettings, deleteOrLeaveGroup, migrate, copyInvite, renewInvite, addMember,
   logout: () => authM.signOut(auth),
@@ -556,7 +599,7 @@ function renderClaim(g) {
       ${free.length ? `<p style="font-size:14px">Wähle deinen Namen, damit deine bisherigen Zahlungen dir zugeordnet werden:</p>
         <div class="claim-list">${free.map(m => `<button class="btn secondary" data-action="claim" data-id="${esc(m.id)}">${esc(m.name)}</button>`).join('')}</div>
         <h3 style="margin-top:18px">… oder als neue Person beitreten</h3>` : '<p style="font-size:14px;margin-bottom:10px">Unter welchem Namen möchtest du in der Gruppe erscheinen?</p>'}
-      <div class="row"><input type="text" id="claimName" maxlength="40" value="${esc(S.user.displayName?.split(' ')[0] || '')}" data-enter="claim">
+      <div class="row"><input type="text" id="claimName" maxlength="40" value="${esc(firstName())}" data-enter="claim">
         <button class="btn" style="flex:0 0 auto" data-action="claim">Beitreten</button></div>
     </div>`;
 }
@@ -580,7 +623,7 @@ function renderGroupForm(g) {
     <label class="check"><input type="checkbox" id="gPot" data-change="togglePot" ${pot ? 'checked' : ''}> 🏦 Gemeinsame Kasse führen</label>
     <div class="field" id="gTargetField" ${pot ? '' : 'hidden'}><label>Sollbeitrag pro Person (optional, pro Monat/Woche bzw. für das Ereignis)</label>
       <input type="text" id="gTarget" inputmode="decimal" placeholder="z. B. 300" value="${g?.potTargetCents ? C.centsToInput(g.potTargetCents) : ''}"></div>
-    ${g ? '' : `<div class="field"><label>Dein Name in der Gruppe</label><input type="text" id="gMyName" maxlength="40" value="${esc(S.user.displayName?.split(' ')[0] || '')}"></div>`}
+    ${g ? '' : `<div class="field"><label>Dein Name in der Gruppe</label><input type="text" id="gMyName" maxlength="40" value="${esc(firstName())}"></div>`}
     <div style="display:flex;gap:8px">
       <button class="btn" data-action="${g ? 'saveSettings' : 'createGroup'}">${g ? 'Speichern' : 'Gruppe anlegen'}</button>
       ${g ? '' : '<button class="btn secondary" data-action="cancelNewGroup">Abbrechen</button>'}

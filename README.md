@@ -6,7 +6,7 @@ Ausgaben gemeinsam aufteilen, zum Beispiel mit der Partnerin, der WG oder im Url
 - **🏦 Gemeinsame Kasse** pro Gruppe, optional mit Sollbeitrag pro Person. Einzahlungen, Ausgaben aus der Kasse und der Kassenstand werden mitgeführt.
 - **Übersicht:** Gesamtausgaben, wer was bezahlt hat und wie viel davon sein Anteil war, Verteilung nach Kategorie, zeitlicher Verlauf, Einzahlungen in die Kasse
 - **Aufteilung** gleichmäßig, nach exakten Beträgen oder nach Anteilen, dazu vereinfachte Schulden und Ausgleichszahlungen
-- **Teilen** per Einladungslink und Google-Login. Personen ohne Konto können als reine Namen mitgeführt werden.
+- **Teilen** per Einladungslink, Anmeldung mit Google oder per Mail-Link ohne Passwort. Personen ohne Konto können als reine Namen mitgeführt werden.
 - Funktioniert dank Offline-Cache auch ohne Netz und synchronisiert, sobald wieder eine Verbindung besteht.
 
 Es gibt keinen Build-Schritt: statische Dateien, Firebase (Auth + Firestore) wird vom gstatic-CDN geladen.
@@ -15,7 +15,8 @@ Es gibt keinen Build-Schritt: statische Dateien, Firebase (Auth + Firestore) wir
 
 1. **Firebase-Projekt anlegen:** Auf <https://console.firebase.google.com> ein neues Projekt erstellen, z. B. `pookiewise`. Google Analytics wird nicht gebraucht.
 2. **Web-App registrieren:** Projekteinstellungen → Allgemein → „App hinzufügen“ → Web (`</>`). Das angezeigte `firebaseConfig`-Objekt in [`firebase-config.js`](firebase-config.js) einfügen.
-3. **Google-Login aktivieren:** Authentication → Anmeldemethode → Google → aktivieren.
+3. **Anmeldung aktivieren:** Authentication → Anmeldemethode → Google → aktivieren.
+   Dann *Neuen Anbieter hinzufügen* → **E-Mail-Adresse/Passwort** → beide Schalter aktivieren, auch „E-Mail-Link (Anmeldung ohne Passwort)“.
    Unter Authentication → Einstellungen → *Autorisierte Domains* `eosclaudecode.github.io` hinzufügen (`localhost` ist schon eingetragen).
 4. **Firestore anlegen:** Firestore Database → Datenbank erstellen → Produktionsmodus, Standort z. B. `eur3 (Europe)`.
    Unter *Regeln* den Inhalt von [`firestore.rules`](firestore.rules) einfügen und **Veröffentlichen** klicken.
@@ -23,7 +24,7 @@ Es gibt keinen Build-Schritt: statische Dateien, Firebase (Auth + Firestore) wir
 
 ## Jemanden einladen
 
-Öffne die Gruppe, gehe zum Tab **Gruppe** und klicke auf **Link kopieren**. Schick den Link weiter. Wer ihn öffnet, meldet sich mit Google an, tritt bei und wählt aus, welche Person in der Gruppe sie ist. Über „Neuen Link erzeugen“ wird der alte Link ungültig.
+Öffne die Gruppe, gehe zum Tab **Gruppe** und klicke auf **Link kopieren**. Schick den Link weiter. Wer ihn öffnet, meldet sich mit Google oder per Mail-Link an, tritt bei und wählt aus, welche Person in der Gruppe sie ist. Über „Neuen Link erzeugen“ wird der alte Link ungültig.
 
 ## Lokal testen
 
