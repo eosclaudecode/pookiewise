@@ -49,6 +49,8 @@ const ICONS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
   bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
+  cloud: '<path d="M7 18a4.5 4.5 0 01-.6-9 6 6 0 0111.5 1.5A3.8 3.8 0 0117.5 18z"/><path d="M12 11v3l2 1"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   wifi: '<path d="M2 2l20 20M8.5 16.5a5 5 0 017 0M5 12.9a10 10 0 015.2-2.8M19 12.9a10 10 0 00-2.4-1.7M12 20h.01"/>',
 };
 const ic = (n, label) => `<svg class="i" viewBox="0 0 24 24" ${label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"'}>${ICONS[n]}</svg>`;
@@ -135,7 +137,7 @@ function show(screen) {
 }
 
 /* ---------- URL: #g/<gruppe>/<tab> für Zurück-Button und Direktlinks ---------- */
-const TABS = ['overview', 'expenses', 'add', 'balances', 'group'];
+const TABS = ['overview', 'expenses', 'add', 'balances', 'group', 'settings'];
 function readRoute() {
   const m = location.hash.match(/^#g\/([\w-]+)(?:\/(\w+))?$/);
   if (!m) return false;
@@ -323,8 +325,8 @@ function subscribeExpenses(attempt = 0) {
   S.expensesFor = S.activeGroupId;
   if (!S.activeGroupId) return;
   const gid = S.activeGroupId;
-  unsubExp = fs.onSnapshot(expCol(gid), snap => {
-    S.expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  unsubExp = fs.onSnapshot(expCol(gid), { includeMetadataChanges: true }, snap => {
+    S.expenses = snap.docs.map(d => ({ id: d.id, ...d.data(), _pending: !!d.metadata?.hasPendingWrites }))
       .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1);
     softRender();
   }, err => {
@@ -375,7 +377,7 @@ function go(tab, extra = {}) {
   if (tab !== 'add') S.editingId = null;
   render(); syncRoute(true);
   scrollTo(0, 0);
-  if (tab === 'add' && !S.editingId && matchMedia('(min-width: 761px)').matches) $('expAmount')?.focus();
+  if (tab === 'add' && !S.editingId) $('expAmount')?.focus({ preventScroll: true });
 }
 function closeDialog() { if ($('dlg').open) $('dlg').close(); }
 
@@ -521,7 +523,7 @@ function commitEntry(g, data, label) {
     onAction: () => before ? saveExpense(g, id, stripMeta(before)) : write(fs.deleteDoc(fs.doc(expCol(g.id), id))),
   });
 }
-const stripMeta = ({ id, createdBy, updatedAt, ...rest }) => rest;
+const stripMeta = ({ id, createdBy, updatedAt, _pending, ...rest }) => rest;
 
 function submitEntry() {
   const g = activeGroup(); if (!g) return;
@@ -659,6 +661,7 @@ const actions = {
   toggleAll: () => { const cbs = [...document.querySelectorAll('.p-check')]; const all = cbs.every(c => c.checked); cbs.forEach(c => c.checked = !all); renderParticipants(); },
   catPick: () => { const c = cat(document.querySelector('input[name=expCat]:checked')?.value); $('expDesc').placeholder = `z. B. ${c.example} (sonst „${c.name}“)`; },
   settleFrom: () => prefillSettlement(false),
+  settleCustom: d => { S.settlePair = { from: d.from, to: d.to }; go('add', { entryType: 'settlement' }); },
   dateQuick: d => {
     if (d.value === 'other') { $('expDate').hidden = false; $('expDate').focus(); try { $('expDate').showPicker(); } catch {} }
     else { $('expDate').value = d.value === 'today' ? C.today() : yesterday(); $('expDate').hidden = true; }
@@ -679,6 +682,15 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => { const a = e.target.dataset?.change; if (a) actions[a]?.({ ...e.target.dataset, value: e.target.value }, e.target); });
 document.addEventListener('input', e => { const a = e.target.dataset?.input; if (a) actions[a]?.(e.target.dataset, e.target); });
 document.addEventListener('keydown', e => {
+  // Pfeiltasten im Säulendiagramm (Roving Tabindex)
+  const col = e.target.closest?.('[data-roving] [tabindex]');
+  if (col && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    const cols = [...col.parentElement.querySelectorAll('[tabindex]')];
+    const i = cols.indexOf(col);
+    const n = e.key === 'Home' ? 0 : e.key === 'End' ? cols.length - 1 : Math.max(0, Math.min(cols.length - 1, i + (e.key === 'ArrowRight' ? 1 : -1)));
+    e.preventDefault(); col.tabIndex = -1; cols[n].tabIndex = 0; cols[n].focus();
+    return;
+  }
   // Pfeiltasten in der Tab-Leiste (WAI-ARIA Tabs)
   if (e.target.getAttribute?.('role') === 'tab' && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
     const tabs = [...e.target.parentElement.querySelectorAll('[role=tab]')];
@@ -720,7 +732,7 @@ function softRender() {
   const ae = document.activeElement;
   const typing = ae && ae.closest?.('#mainArea') && /INPUT|SELECT|TEXTAREA/.test(ae.tagName) && ae.value;
   renderSidebar();
-  if (!(S.tab === 'add' || S.view === 'newGroup' || (S.tab === 'group' && typing) || typing)) renderMain();
+  if (!(S.tab === 'add' || S.tab === 'settings' || S.view === 'newGroup' || typing)) renderMain();
 }
 
 function renderUser() {
@@ -793,17 +805,18 @@ function renderMain() {
   let html = `<div class="group-head"><span class="g-icon" aria-hidden="true">${groupIcon(g)}</span>
       <div><h1>${esc(g.name)}</h1><div class="meta">${groupMeta(g)}</div></div></div>`;
   html += `<div class="tabbar"><div class="tabs" role="tablist" aria-label="Bereiche">${NAV.map(([k, label]) =>
-    `<button class="tab" role="tab" id="tab-${k}" aria-controls="panel" aria-selected="${S.tab === k}" tabindex="${S.tab === k ? 0 : -1}" data-action="tab" data-tab="${k}">${label}</button>`).join('')}</div>
+    `<button class="tab" role="tab" id="tab-${k}" aria-controls="panel" aria-selected="${(S.tab === 'settings' ? 'group' : S.tab) === k}" tabindex="${(S.tab === 'settings' ? 'group' : S.tab) === k ? 0 : -1}" data-action="tab" data-tab="${k}">${label}</button>`).join('')}</div>
     <button class="btn small ${g.members.length < 2 && !g.potEnabled ? 'secondary' : ''}" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button></div>`;
 
   let body;
   if (S.tab === 'group') body = renderGroupTab(g);
+  else if (S.tab === 'settings') body = renderSettings(g);
   else if (g.members.length < 2 && !g.potEnabled && S.tab !== 'overview') body = renderNeedPeople(g);
   else if (S.tab === 'add') body = renderForm(g);
   else if (S.tab === 'balances') body = renderBalances(g);
   else if (S.tab === 'expenses') body = periodNav(g) + renderExpenses(g, vis);
   else body = renderOverview(g, vis);
-  html += `<div id="panel" role="tabpanel" ${S.tab === 'add' ? 'aria-label="Eintrag erfassen"' : `aria-labelledby="tab-${S.tab}"`}>${body}</div>`;
+  html += `<div id="panel" role="tabpanel" ${S.tab === 'add' ? 'aria-label="Eintrag erfassen"' : `aria-labelledby="tab-${S.tab === 'settings' ? 'group' : S.tab}"`}>${body}</div>`;
 
   const focusId = document.activeElement?.id;
   el.innerHTML = html;
@@ -814,10 +827,11 @@ function renderMain() {
   // Im Formular auf Mobile: Vollbild-Formular mit fester Speicherleiste statt Navigation
   if (S.tab === 'add' && $('entryForm')) { $('layout').classList.add('form-mode'); return; }
   nav.hidden = false; $('layout').classList.add('has-nav');
-  const cur = editing ? 'add' : S.tab;
+  const cur = editing ? 'add' : S.tab === 'settings' ? 'group' : S.tab;
   const btn = ([k, label, icon]) => `<button data-action="tab" data-tab="${k}" ${cur === k ? 'aria-current="page"' : ''}>${ic(icon)}<span>${label}</span></button>`;
-  nav.innerHTML = btn(NAV[0]) + btn(NAV[1]) +
-    `<button class="fab" data-action="tab" data-tab="add" data-type="expense" aria-label="Ausgabe hinzufügen" ${cur === 'add' ? 'aria-current="page"' : ''}>${ic('plus')}</button>` +
+ const solo = g.members.length < 2 && !g.potEnabled;
+  nav.innerHTML = btn(NAV[0]) + btn(NAV[1]) + (solo ? '' :
+    `<button class="fab" data-action="tab" data-tab="add" data-type="expense" aria-label="Ausgabe hinzufügen" ${cur === 'add' ? 'aria-current="page"' : ''}>${ic('plus')}</button>`) +
     btn(NAV[2]) + btn(NAV[3]);
 }
 
@@ -926,10 +940,12 @@ function renderNeedPeople(g) {
 }
 
 function renderGroupTab(g) {
-  const isOwner = g.createdBy === S.user.uid;
-  return `<div class="card"><div class="card-h"><h2>Mitglieder (${g.members.length})</h2></div>
-      <div>${g.members.map(m => `<div class="list-row"><span class="grow"><span class="who">${esc(m.name)}</span>${m.uid === S.user.uid ? '<span class="you">Du</span>' : m.uid ? '<span class="tag">hat Konto</span>' : '<span class="tag">ohne Konto</span>'}</span>
-        <button type="button" class="icon-btn danger" data-action="removeMember" data-id="${esc(m.id)}" aria-label="${esc(m.name)} entfernen">${ic('trash')}</button></div>`).join('')}</div>
+  const me = myMember(g)?.id;
+  const used = id => S.expenses.some(e => e.payerId === id || e.shares.some(x => x.memberId === id));
+  return `<div class="card"><h2>Mitglieder (${g.members.length})</h2>
+      <div>${g.members.map(m => `<div class="list-row"><span class="grow"><span class="who">${esc(m.name)}</span>${m.id === me ? '<span class="you">Du</span>' : m.uid ? '<span class="tag">hat Konto</span>' : '<span class="tag">ohne Konto</span>'}</span>
+        ${m.id === me ? '' : used(m.id) ? '<span class="hint" style="margin:0">hat Einträge</span>'
+          : `<button type="button" class="icon-btn danger" data-action="removeMember" data-id="${esc(m.id)}" aria-label="${esc(m.name)} entfernen">${ic('trash')}</button>`}</div>`).join('')}</div>
       ${addMemberForm(g)}
       <p class="hint">Personen ohne Konto (z. B. Freunde im Urlaub) legst du einfach als Namen an. Treten sie später per Link bei, wählen sie ihren Namen aus.</p>
     </div>
@@ -938,6 +954,13 @@ function renderGroupTab(g) {
       ${inviteBox(g)}
       <p class="note">Link in falsche Hände geraten? <button type="button" class="btn ghost small" data-action="renewInvite">Neuen Link erzeugen</button></p>
     </div>
+    <button type="button" class="card list-link" data-action="tab" data-tab="settings">
+      <span class="grow"><b>Einstellungen</b><span class="hint" style="display:block;margin:0">Name, Symbol, Art, Kasse${g.createdBy === S.user.uid ? ', Gruppe löschen' : ', Gruppe verlassen'}</span></span>${ic('right')}</button>`;
+}
+
+function renderSettings(g) {
+  const isOwner = g.createdBy === S.user.uid;
+  return `<button type="button" class="btn ghost small" style="margin:0 0 10px -6px" data-action="tab" data-tab="group">${ic('left')} Zurück zur Gruppe</button>
     ${renderGroupForm(g)}
     <div class="card"><h2>${isOwner ? 'Gruppe löschen' : 'Gruppe verlassen'}</h2>
       <p style="margin-bottom:12px" class="zero">${isOwner ? 'Löscht die Gruppe mit allen Einträgen für alle Mitglieder.' : 'Deine Einträge bleiben für die anderen erhalten.'}</p>
@@ -962,27 +985,30 @@ function renderExpenses(g, vis) {
   for (const e of [...vis].reverse()) {
     if (e.date !== lastDay) { html += `<h3 class="day-h">${esc(dayLabel(e.date))}</h3>`; lastDay = e.date; }
     let icon, title, sub, mine = '';
-    const who = id => id === me ? 'Du' : esc(memberName(g, id));
+    const name = id => esc(memberName(g, id));
     if (e.type === 'settlement') {
       icon = '💸'; title = 'Ausgleich';
-      sub = `${who(e.payerId)} → ${who(e.shares[0].memberId)}`;
+      const to = e.shares[0].memberId;
+      sub = `${e.payerId === me ? 'Du' : name(e.payerId)} an ${to === me ? 'dich' : name(to)}`;
     } else if (e.type === 'contribution') {
       icon = '🏦'; title = 'Einzahlung';
-      sub = `in die Kasse · von ${who(e.payerId)}`;
+      sub = `in die Kasse, von ${e.payerId === me ? 'dir' : name(e.payerId)}`;
     } else {
       icon = cat(e.category).icon; title = esc(e.desc);
       const n = e.shares.length;
-      sub = `${e.payerId === POT ? 'Kasse' : who(e.payerId)} · für ${n === g.members.length ? 'alle' : n === 1 ? who(e.shares[0].memberId) : n}`;
+      const payer = e.payerId === POT ? 'Aus der Kasse bezahlt' : e.payerId === me ? 'Du hast bezahlt' : `${name(e.payerId)} hat bezahlt`;
+      sub = `${payer} · für ${n === g.members.length ? 'alle' : n === 1 ? (e.shares[0].memberId === me ? 'dich' : name(e.shares[0].memberId)) : n + ' Personen'}`;
       const share = e.shares.find(s => s.memberId === me)?.cents || 0;
-      mine = share ? `<small>Anteil ${fmt(share)}</small>` : '<small>ohne dich</small>';
+      mine = share ? `<small>dein Anteil ${fmt(share)}</small>` : '<small>ohne dich</small>';
     }
+    if (e._pending) sub += ` · <span class="pending">${ic('cloud')} wird übertragen</span>`;
     const plain = e.type === 'settlement' || e.type === 'contribution';
     html += `<button class="entry ${plain ? 'muted' : ''}" data-action="editExpense" data-id="${esc(e.id)}" aria-label="${esc((plain ? title : e.desc) + ', ' + fmt(e.amountCents))} – bearbeiten">
       <span class="e-icon" aria-hidden="true">${icon}</span>
       <span class="e-text"><span class="e-title">${title}</span><span class="e-sub">${sub}</span></span>
       <span class="e-amt"><b>${fmt(e.amountCents)}</b>${mine}</span></button>`;
   }
-  return `<div class="card"><p class="hint" style="margin:0 0 4px">Bezahlt von · geteilt durch. Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p>${html}</div>`;
+  return `<div class="card">${html}<p class="note">Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p></div>`;
 }
 
 function memberOptions(g, withPot, selected) {
@@ -1003,8 +1029,10 @@ function prefillSettlement(initial) {
   const debts = debtsOf(g).debts.sort((a, b) => b.cents - a.cents);
   let d;
   if (initial) {
-    d = debts.find(x => x.from === me || x.to === me) || debts[0];
+    const pair = S.settlePair; S.settlePair = null;
+    d = pair ? debts.find(x => x.from === pair.from && x.to === pair.to) || { ...pair, cents: 0 } : debts.find(x => x.from === me || x.to === me) || debts[0];
     if (d) $('setFrom').value = d.from;
+    if (pair) { $('setTo').value = pair.to; $('expAmount').value = ''; $('setHint').textContent = d.cents ? `Offen sind ${fmt(d.cents)}. Trag ein, wie viel davon bezahlt wurde.` : ''; return; }
   } else d = debts.find(x => x.from === $('setFrom').value);
   const from = $('setFrom').value;
   if (d) {
@@ -1046,7 +1074,7 @@ function renderForm(g) {
   const me = myMember(g)?.id;
 
   let html = `<form class="card" id="entryForm" data-submit="submitEntry" novalidate>
-    <div class="card-h"><h2 id="formTitle">${titles[type]}</h2><button type="button" class="icon-btn" data-action="cancelEdit" aria-label="Schließen, ohne zu speichern">${ic('x')}</button></div>
+    <div class="card-h"><h2 id="formTitle">${titles[type]}</h2><span>${editing ? `<button type="button" class="icon-btn danger" data-action="deleteExpense" data-id="${esc(editing.id)}" aria-label="Eintrag löschen">${ic('trash')}</button>` : ''}<button type="button" class="icon-btn" data-action="cancelEdit" aria-label="Schließen, ohne zu speichern">${ic('x')}</button></span></div>
     ${!editing && types.length > 1 ? `<div class="field"><div class="seg" role="radiogroup" aria-label="Art des Eintrags">${types.map(([k, l]) =>
       `<label><input type="radio" name="eType" value="${k}" data-change="entryType" ${k === type ? 'checked' : ''}>${l}</label>`).join('')}</div></div>` : ''}
     <div class="field"><label for="expAmount">Betrag</label>
@@ -1085,8 +1113,7 @@ function renderForm(g) {
   }
   html += `<div class="form-actions sticky-actions">
       <button class="btn lg">${ic('check')} ${editing ? 'Änderungen speichern' : 'Speichern'}</button>
-      <button type="button" class="btn secondary lg" data-action="cancelEdit">Abbrechen</button>${editing ? `<span class="spacer"></span>
-        <button type="button" class="icon-btn danger" data-action="deleteExpense" data-id="${esc(editing.id)}" aria-label="Eintrag löschen">${ic('trash')}</button>` : ''}
+      <button type="button" class="btn secondary lg desk-only" data-action="cancelEdit">Abbrechen</button>
     </div></form>`;
   return html;
 }
@@ -1182,7 +1209,7 @@ function renderBalances(g) {
     : debts.map(d => `<div class="list-row">
         <span class="grow"><span class="who">${nm(d.from)}</span> <span class="arrow">${ic('arrow', 'an')}</span> <span class="who">${nm(d.to)}</span></span>
         <span class="amt">${fmt(d.cents)}</span>
-        <button type="button" class="btn small ${d.from === me || d.to === me ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} Bezahlt</button>
+        <button type="button" class="btn small ${d.from === me || d.to === me ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} Bezahlt</button><button type="button" class="icon-btn" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag erfassen" title="Teilbetrag erfassen">${ic('pencil')}</button>
       </div>`).join('');
   let potHtml = '';
   if (pot) {
@@ -1206,7 +1233,7 @@ function renderBalances(g) {
   return `<div class="card"><div class="card-h"><h2>So gleicht ihr aus</h2>
       <button type="button" class="btn ghost small" data-action="tab" data-tab="add" data-type="settlement">${ic('plus')} Zahlung manuell erfassen</button></div>
       ${debtHtml}
-      ${debts.length ? `<p class="note">Die wenigsten Überweisungen, mit denen alle quitt sind. Tippe auf „Bezahlt“, sobald das Geld überwiesen ist.${pot ? ' Die Kasse wird getrennt verrechnet.' : ''}${isRecurring(g) ? ' Gilt über alle Zeiträume.' : ''}</p>` : ''}</div>
+      ${debts.length ? `<p class="note">Die wenigsten Überweisungen, mit denen alle quitt sind. Tippe auf „Bezahlt“, sobald das Geld überwiesen ist, oder auf den Stift für einen Teilbetrag.${pot ? ' Die Kasse wird getrennt verrechnet.' : ''}${isRecurring(g) ? ' Gilt über alle Zeiträume.' : ''}</p>` : ''}</div>
     ${potHtml}
     <div class="card"><h2>Salden</h2>${balHtml}</div>`;
 }
@@ -1222,15 +1249,15 @@ function renderOverview(g, vis) {
     const prevKey = C.shiftPeriod(cursor(g), g.period, -1);
     const prev = C.spendingStats(S.expenses.filter(e => C.periodKey(e.date, g.period) === prevKey)).total;
     const diff = st.total - prev;
-    kpis.push(kpi(`Vergleich zu ${C.periodLabel(prevKey, g.period, true)}`, prev ? `${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${fmt(Math.abs(diff))}` : '–', prev ? `${C.periodLabel(prevKey, g.period, true)}: ${fmt(prev)}` : 'keine Ausgaben davor'));
+    const prevName = g.period === 'week' ? C.periodLabel(prevKey, 'week', true) : new Date(prevKey + '-01T00:00:00').toLocaleDateString('de-DE', { month: 'long' });
+    kpis.push(kpi(`ggü. ${prevName}`, prev ? `${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${fmt(Math.abs(diff))}` : '–', prev ? `${prevName}: ${fmt(prev)}` : 'keine Ausgaben davor'));
   } else {
     const dates = vis.filter(C.isSpending).map(e => e.date);
     const from = g.startDate || dates[0], to = g.endDate || dates[dates.length - 1];
     const days = from && to ? Math.max(1, C.daysBetween(from, to)) : 0;
     kpis.push(kpi('Pro Tag', days ? fmt(Math.round(st.total / days)) : '–', days ? `über ${days} Tag${days > 1 ? 'e' : ''}` : 'noch keine Daten'));
   }
-  if (me) kpis.push(kpi('Deine Kosten', fmt(st.share[me.id] || 0), `dein Anteil · bezahlt ${fmt(st.paid[me.id] || 0)}`));
-  if (usesPot(g)) kpis.push(kpi('Kasse', fmt(C.potCash(S.expenses)), 'aktueller Stand'));
+  if (me) kpis.push(kpi('Dein Anteil', fmt(st.share[me.id] || 0), `ausgelegt: ${fmt(st.paid[me.id] || 0)}`));
 
   if (g.members.length < 2 && !g.potEnabled) return html;
   if (st.count === 0 && !g.potEnabled) return html + `<div class="card empty-state"><div class="big" aria-hidden="true">📊</div>
@@ -1245,18 +1272,15 @@ function renderOverview(g, vis) {
 
 // Erste Schritte, bis die Gruppe eingerichtet ist
 function renderChecklist(g) {
-  const steps = [
-    [g.members.length >= 2, 'Personen hinzufügen', 'group', 'Hinzufügen'],
-    [g.memberUids.length >= 2, 'Die anderen per Link einladen', 'group', 'Einladen'],
-    [S.expenses.some(C.isSpending), 'Erste Ausgabe eintragen', 'add', 'Eintragen'],
-  ];
-  if (steps.every(s => s[0]) || (steps[0][0] && steps[2][0])) return '';
-  const solo = !steps[0][0];
-  return `<div class="card"><h2>Los geht's: richte „${esc(g.name)}“ ein</h2><ol class="steps">${steps.map(([done, text, tab, cta], i) =>
-    `<li class="${done ? 'done' : ''}"><span class="num">${done ? ic('check') : i + 1}</span><span class="s-text">${text}</span>
-      ${done ? '<span class="sr-only">erledigt</span>' : solo && i < 2 ? '' : `<button class="btn small ${i === steps.findIndex(s => !s[0]) ? '' : 'secondary'}" data-action="tab" data-tab="${tab}" data-type="expense" ${solo ? 'disabled' : ''}>${cta}</button>`}</li>`).join('')}</ol>
-    ${solo ? `<h3>Wer ist noch dabei?</h3><p class="hint" style="margin-top:0">Ohne Konto, nur mit Namen. Du kannst die anderen auch später einladen.</p>${addMemberForm(g)}
-      <h3>Oder direkt einladen</h3>${inviteBox(g, true)}` : ''}</div>`;
+  const people = g.members.length >= 2, invited = g.memberUids.length >= 2, first = S.expenses.some(C.isSpending);
+  if ((people && invited && first) || (people && first)) return '';
+  const step = (n, done, text, body) => `<li class="${done ? 'done' : ''}"><span class="num">${done ? ic('check') : n}</span><span class="s-text">${text}</span>
+    ${done ? '<span class="sr-only">erledigt</span>' : ''}${!done && body ? `<div class="s-body">${body}</div>` : ''}</li>`;
+  return `<div class="card"><h2>Los geht’s: richte „${esc(g.name)}“ ein</h2><ol class="steps">
+    ${step(1, people, 'Wer ist noch dabei?', `<p class="hint" style="margin:0">Nur ein Name genügt, ein Konto ist nicht nötig.</p>${addMemberForm(g, false)}`)}
+    ${step(2, invited, 'Die anderen per Link einladen <span class="zero">(optional)</span>', `<p class="hint" style="margin:0 0 8px">Dann sehen und ergänzen alle die Ausgaben auf ihrem eigenen Handy.</p>${inviteBox(g, !people)}`)}
+    ${step(3, first, 'Erste Ausgabe eintragen', people ? `<button class="btn" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button>` : '<p class="hint" style="margin:0">Geht los, sobald jemand dabei ist.</p>')}
+  </ol></div>`;
 }
 
 // Persönlicher Stand: das Wichtigste zuerst
@@ -1271,7 +1295,7 @@ function renderStanding(g, me) {
     const other = esc(memberName(g, out ? d.to : d.from));
     return `<div class="list-row"><span class="grow">${out ? `Du zahlst <b>${other}</b>` : `<b>${other}</b> zahlt dir`}</span>
       <span class="amt ${out ? 'neg' : 'pos'}">${fmt(d.cents)}</span>
-      <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button></div>`;
+      <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button><button type="button" class="icon-btn" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag erfassen" title="Teilbetrag erfassen">${ic('pencil')}</button></div>`;
   }).join('');
   return `<section class="card" aria-labelledby="standL"><div class="hero">
       <div><div class="h-label" id="standL">Dein Stand${isRecurring(g) ? ' über alle Zeiträume' : ''}</div><div class="h-value">${value}</div>
@@ -1342,10 +1366,13 @@ function timeChart(g, vis) {
   const grid = [1, 2, 3].map(i => i * step).filter(v => v <= top)
     .map(v => `<div class="gl" aria-hidden="true" style="bottom:${(v / top * 100).toFixed(1)}%"><span>${fmtShort(v)}</span></div>`).join('');
   const every = Math.ceil(points.length / (matchMedia('(max-width: 760px)').matches ? 5 : 10));
-  return `<div class="card wide"><h2>${title}</h2>
-    <div class="cols" role="list" aria-label="${esc(title)}">${grid}${points.map(p => `<div class="col ${p.key === currentKey ? 'current' : ''}" role="listitem" tabindex="0" aria-label="${esc(tipOf(p.key))}: ${fmt(p.cents)}" data-tip="${esc(tipOf(p.key))}\n${fmt(p.cents)}">
+  const focusIdx = currentKey ? points.findIndex(p => p.key === currentKey) : points.length - 1;
+  // Ein Tab-Stopp für das ganze Diagramm, Pfeiltasten wechseln die Säule
+  return `<div class="card wide"><h2 id="tcTitle">${title}</h2>
+    <div class="cols" role="list" aria-labelledby="tcTitle" aria-describedby="tcHelp" data-roving>${grid}${points.map((p, i) => `<div class="col ${p.key === currentKey ? 'current' : ''}" role="listitem" tabindex="${i === focusIdx ? 0 : -1}" aria-label="${esc(tipOf(p.key))}: ${fmt(p.cents)}" data-tip="${esc(tipOf(p.key))}\n${fmt(p.cents)}">
       ${p.cents ? `<div class="bar" style="height:${(p.cents / top * 100).toFixed(1)}%"></div>` : ''}</div>`).join('')}</div>
-    <div class="xlabels" aria-hidden="true">${points.map((p, i) => `<span>${i % every === 0 ? esc(labelOf(p.key)) : ''}</span>`).join('')}</div>
+    <div class="xlabels" aria-hidden="true">${points.map((p, i) => `<span class="${p.key === currentKey ? 'cur' : ''}">${(points.length - 1 - i) % every === 0 ? esc(labelOf(p.key)) : ''}</span>`).join('')}</div>
+    <p class="sr-only" id="tcHelp">Mit den Pfeiltasten links und rechts zwischen den Säulen wechseln.</p>
   </div>`;
 }
 function niceStep(raw) {
@@ -1366,8 +1393,7 @@ function potChart(g, vis) {
         <div class="top"><span>${esc(m.name)}</span><span>${fmt(v)}${target ? ` <span class="zero">von ${fmt(target)}</span>${v >= target ? ' ✓' : ''}` : ''}</span></div>
         <div class="progress"><div style="width:${(v / max * 100).toFixed(1)}%"></div></div></div>`;
     }).join('')}
-    <div class="form-actions"><span class="zero">Kassenstand: <b>${fmt(C.potCash(S.expenses))}</b></span><span class="spacer"></span>
-      <button type="button" class="btn small secondary" data-action="tab" data-tab="add" data-type="contribution">${ic('plus')} Einzahlung</button></div>
+    <div class="card-foot"><button type="button" class="btn small secondary" data-action="tab" data-tab="add" data-type="contribution">${ic('plus')} Einzahlung</button></div>
   </div>`;
 }
 

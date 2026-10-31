@@ -88,7 +88,7 @@
     background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
     border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
   }
-  .card-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .card-h { display: flex; align-items: center; justify-content: space-between; gap: 4px 12px; margin-bottom: 14px; flex-wrap: wrap; }
   .card h2, .card-h h2 { font-size: 16px; font-weight: 700; color: var(--text); }
   .card-h h2 { margin: 0; }
   .card h2 { margin-bottom: 14px; }
@@ -159,8 +159,9 @@
   .btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
   .btn.block { width: 100%; }
   .btn.lg { min-height: 50px; font-size: 16px; }
-  .btn.google { background: var(--surface); color: var(--text); border-color: var(--border-strong); min-height: 50px; width: 100%; font-size: 16px; }
-  .btn.google:hover { background: var(--surface-2); }
+  .btn.google { background: var(--text); color: var(--surface); min-height: 52px; width: 100%; font-size: 16px; }
+  .btn.google:hover { background: color-mix(in srgb, var(--text) 85%, var(--surface)); }
+  .btn.google svg { background: #fff; border-radius: 50%; padding: 3px; width: 24px; height: 24px; }
   .icon-btn {
     display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
     background: transparent; border: 0; color: var(--muted); cursor: pointer;
@@ -291,6 +292,13 @@
   .steps li.done .num { background: var(--brand); color: var(--on-brand); }
   .steps li.done .s-text { color: var(--muted); text-decoration: line-through; }
   .steps .s-text { flex: 1; font-weight: 600; }
+  .steps li { flex-wrap: wrap; }
+  .steps .s-body { flex-basis: 100%; padding: 0 0 10px 42px; }
+  .steps .s-body form { margin-top: 8px !important; }
+  .list-link { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer; color: var(--text); font: inherit; }
+  .list-link:hover { background: var(--surface-2); }
+  .pending { display: inline-flex; align-items: center; gap: 3px; color: var(--pot); }
+  .pending svg.i { width: 14px; height: 14px; }
 
   /* ---------- Toast & Dialog ---------- */
   #toast {
@@ -321,6 +329,7 @@
   .kpi .k-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   .charts .card { margin-bottom: 0; min-width: 0; }
+  .charts { align-items: start; }
   .cols .col:focus-visible { outline-offset: -2px; }
   .charts .wide { grid-column: 1 / -1; }
   .legend { display: flex; gap: 14px; font-size: 13px; color: var(--text-2); margin-bottom: 10px; flex-wrap: wrap; }
@@ -346,10 +355,11 @@
   .cols .gl span { position: absolute; left: -56px; top: -8px; width: 50px; text-align: right; font-size: 11.5px; color: var(--tick); }
   .cols .col { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; z-index: 1; }
   .cols .col:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
-  .cols .bar { width: 100%; max-width: 56px; background: color-mix(in srgb, var(--s1) 55%, var(--surface)); border-radius: 4px 4px 0 0; }
-  .cols .col.current .bar { background: var(--s1); }
+  .cols .bar { width: 100%; max-width: 56px; background: var(--s1); border-radius: 4px 4px 0 0; }
+  .cols .col.current .bar { background: color-mix(in srgb, var(--s1) 65%, var(--text)); }
   .xlabels { display: flex; gap: 3px; padding-left: 56px; margin-top: 4px; }
-  .xlabels span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--tick); text-align: center; white-space: nowrap; overflow: hidden; }
+  .xlabels span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--tick); text-align: center; white-space: nowrap; overflow: visible; display: flex; justify-content: center; }
+  .xlabels span.cur { color: var(--text); font-weight: 700; }
   .progress { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; margin-top: 6px; }
   .progress div { height: 100%; background: var(--s3); border-radius: 0 4px 4px 0; }
   .pot-row { padding: 8px 0; font-size: 14px; }
@@ -398,11 +408,14 @@
     .center-card { margin: 16px; padding: 24px 18px; }
     .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
     .kpi .k-value { font-size: 19px; }
+    .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
     .sticky-actions {
       position: sticky; bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 5; background: var(--surface);
       margin: 8px -16px -16px; padding: 12px 16px; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
     }
     .sticky-actions .btn:first-child { flex: 1; }
+    .desk-only { display: none !important; }
+    .steps .s-body { padding-left: 0; }
     #toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
     dialog.sheet { margin: auto 0 0; width: 100%; max-width: 100%; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
     .bottom-nav {
