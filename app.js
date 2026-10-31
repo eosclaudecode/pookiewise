@@ -732,6 +732,9 @@ const actions = {
   filterEntries: () => {
     S.q = $('entrySearch').value; S.filter = document.querySelector('input[name=eFilter]:checked')?.value || 'all';
     const g = activeGroup(); $('entryList').innerHTML = entryList(g, visibleExpenses(g));
+    // Nur die Trefferzahl ansagen, entprellt
+    clearTimeout(S.countTimer);
+    S.countTimer = setTimeout(() => { const n = $('entryList')?.querySelectorAll('.entry').length; if ($('entryCount')) $('entryCount').textContent = `${n} ${n === 1 ? 'Eintrag' : 'Einträge'} gefunden`; }, 400);
   },
   clearFilter: () => { S.q = ''; S.filter = 'all'; renderMain(); $('entrySearch')?.focus(); },
   remind: d => remind(d.from),
@@ -1044,7 +1047,7 @@ function renderSettings(g) {
   const isOwner = g.createdBy === S.user.uid;
   return `<button type="button" class="btn ghost small" style="margin:0 0 10px -6px" data-action="tab" data-tab="group">${ic('left')} Zurück zur Gruppe</button>
     ${renderGroupForm(g)}
-    <div class="card"><h2>${isOwner ? 'Gruppe löschen' : 'Gruppe verlassen'}</h2>
+    <div class="card narrow"><h2>${isOwner ? 'Gruppe löschen' : 'Gruppe verlassen'}</h2>
       <p style="margin-bottom:12px" class="zero">${isOwner ? 'Löscht die Gruppe mit allen Einträgen für alle Mitglieder.' : 'Deine Einträge bleiben für die anderen erhalten.'}</p>
       <button type="button" class="btn danger" data-action="deleteOrLeaveGroup">${ic('trash')} ${isOwner ? 'Gruppe für alle löschen' : 'Gruppe verlassen'}</button></div>`;
 }
@@ -1068,7 +1071,7 @@ function renderExpenses(g, vis) {
     <div class="filters"><div class="search"><label for="entrySearch" class="sr-only">Einträge durchsuchen</label>${ic('search')}
       <input type="search" id="entrySearch" placeholder="Suchen, z. B. Pizza" value="${esc(S.q || '')}" data-input="filterEntries" autocomplete="off"></div>
       <div class="chips" role="radiogroup" aria-label="Filter">${chip('all', 'Alle')}${chip('paid', 'Von mir bezahlt')}${chip('mine', 'Mit mir')}${chip('settle', 'Ausgleich & Kasse')}</div></div>
-    <div id="entryList" aria-live="polite">${entryList(g, vis)}</div>
+    <div id="entryList">${entryList(g, vis)}</div><p class="sr-only" role="status" id="entryCount"></p>
     <p class="note">Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p></div>`;
 }
 function entryList(g, vis) {
