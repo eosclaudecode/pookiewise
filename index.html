@@ -159,8 +159,7 @@
   .btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
   .btn.block { width: 100%; }
   .btn.lg { min-height: 50px; font-size: 16px; }
-  .btn.google { background: var(--text); color: var(--surface); min-height: 52px; width: 100%; font-size: 16px; }
-  .btn.google:hover { background: color-mix(in srgb, var(--text) 85%, var(--surface)); }
+  .btn.google { min-height: 52px; width: 100%; font-size: 16px; }
   .btn.google svg { background: #fff; border-radius: 50%; padding: 3px; width: 24px; height: 24px; }
   .icon-btn {
     display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
@@ -295,6 +294,10 @@
   .steps li { flex-wrap: wrap; }
   .steps .s-body { flex-basis: 100%; padding: 0 0 10px 42px; }
   .steps .s-body form { margin-top: 8px !important; }
+  .list-link .grow { flex: 1; min-width: 0; }
+  .delete-row { border-top: 1px solid var(--border); padding-top: 12px; margin: 4px 0 8px; }
+  .debt-actions { display: flex; gap: 6px; align-items: center; }
+  .mob-only { display: none; }
   .list-link { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer; color: var(--text); font: inherit; }
   .list-link:hover { background: var(--surface-2); }
   .pending { display: inline-flex; align-items: center; gap: 3px; color: var(--pot); }
@@ -346,10 +349,10 @@
   .donut-wrap circle.seg:hover { stroke-width: 26; }
   .donut-wrap .d-label { fill: var(--muted); }
   .donut-wrap .d-value { fill: var(--text); }
-  .cat-legend { flex: 1; min-width: 210px; font-size: 13.5px; }
-  .cat-legend span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cat-legend div { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
-  .cat-legend span:last-child { color: var(--muted); white-space: nowrap; }
+  .cat-legend { flex: 1; min-width: 180px; font-size: 13.5px; }
+  .cat-legend div { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0; }
+  .cat-legend .cl-name small { display: block; padding-left: 16px; color: var(--muted); font-size: 12.5px; }
+  .cat-legend .cl-pct { font-weight: 700; white-space: nowrap; }
   .cols { position: relative; height: 170px; display: flex; align-items: flex-end; gap: 3px; padding-left: 56px; border-bottom: 1px solid var(--axis); }
   .cols .gl { position: absolute; left: 56px; right: 0; border-top: 1px solid var(--grid); }
   .cols .gl span { position: absolute; left: -56px; top: -8px; width: 50px; text-align: right; font-size: 11.5px; color: var(--tick); }
@@ -407,14 +410,25 @@
     .hero .actions .btn { flex: 1; }
     .center-card { margin: 16px; padding: 24px 18px; }
     .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
-    .kpi .k-value { font-size: 19px; }
-    .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
     .sticky-actions {
       position: sticky; bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 5; background: var(--surface);
       margin: 8px -16px -16px; padding: 12px 16px; border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius);
     }
     .sticky-actions .btn:first-child { flex: 1; }
     .desk-only { display: none !important; }
+    .mob-only { display: inline; }
+    .entry .e-amt small { display: none; }
+    .row.end { gap: 8px; }
+    .list-row.debt { row-gap: 2px; }
+    .list-row.debt .grow { flex: 1 1 auto; }
+    .list-row.debt .debt-actions { flex-basis: 100%; justify-content: flex-end; }
+    .kpis { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 2px 16px; }
+    .kpi { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: 12px 0; display: grid; grid-template-columns: 1fr auto; column-gap: 12px; align-items: center; }
+    .kpi:last-child { border-bottom: 0; }
+    .kpi .k-label { grid-column: 1; font-size: 14px; color: var(--text-2); }
+    .kpi .k-sub { grid-column: 1; margin: 0; }
+    .kpi .k-value { grid-column: 2; grid-row: 1 / span 2; font-size: 18px; margin: 0; }
     .steps .s-body { padding-left: 0; }
     #toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
     dialog.sheet { margin: auto 0 0; width: 100%; max-width: 100%; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }

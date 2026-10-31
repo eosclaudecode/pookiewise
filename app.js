@@ -127,7 +127,7 @@ function invalid(id, msg) {
   const anchor = el.closest('.amount-wrap, .participants, .chips, .seg') || el;
   anchor.insertAdjacentHTML('afterend', `<div class="field-error" id="${id}-err">${ic('alert')}${esc(msg)}</div>`);
   el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  el.scrollIntoView({ block: 'center' });
 }
 
 function show(screen) {
@@ -379,6 +379,17 @@ function go(tab, extra = {}) {
   scrollTo(0, 0);
   if (tab === 'add' && !S.editingId) $('expAmount')?.focus({ preventScroll: true });
 }
+// Ungespeicherte Einstellungen: Button aktivieren, beim Verlassen nachfragen
+function setDirty(v) {
+  S.dirty = v;
+  if ($('saveSettingsBtn')) { $('saveSettingsBtn').disabled = !v; $('dirtyHint').textContent = v ? 'Ungespeicherte Änderungen' : 'Keine ungespeicherten Änderungen'; }
+}
+async function leaveOk() {
+  if (!S.dirty || S.tab !== 'settings') return true;
+  const ok = await ask({ title: 'Änderungen verwerfen?', text: 'Du hast die Einstellungen geändert, aber noch nicht gespeichert.', ok: 'Verwerfen', danger: true });
+  if (ok) S.dirty = false;
+  return ok;
+}
 function closeDialog() { if ($('dlg').open) $('dlg').close(); }
 
 function readGroupForm() {
@@ -422,6 +433,7 @@ function saveSettings() {
   const g = activeGroup(); if (!g) return;
   const data = readGroupForm(); if (!data) return;
   write(fs.updateDoc(groupRef(g.id), data));
+  setDirty(false);
   toast('Einstellungen gespeichert');
 }
 
@@ -469,8 +481,9 @@ function addMember() {
   if (!name) return invalid('newMemberName', 'Bitte einen Namen eingeben.');
   if (g.members.some(m => m.name.toLowerCase() === name.toLowerCase())) return invalid('newMemberName', `„${name}“ ist schon in der Gruppe.`);
   inp.value = '';
+  if (g.members.length === 1 && S.tab === 'overview') S.focusAfter = 'startFirst';
   write(fs.updateDoc(groupRef(g.id), { members: [...g.members, { id: C.uid(), name, uid: null }] }));
-  toast(`${name} hinzugefügt`);
+  toast(g.members.length === 1 && S.tab === 'overview' ? `${name} ist dabei. Jetzt die erste Ausgabe eintragen!` : `${name} hinzugefügt`);
 }
 async function removeMember(id) {
   const g = activeGroup(); if (!g) return;
@@ -513,12 +526,13 @@ function shiftCursor(n) {
 function commitEntry(g, data, label) {
   const id = S.editingId || newExpenseId(g.id);
   const before = S.editingId ? S.expenses.find(e => e.id === id) : null;
+  const firstEver = !before && !S.expenses.some(C.isSpending) && data.type !== 'settlement' && data.type !== 'contribution';
   saveExpense(g, id, data);
   if (isRecurring(g)) S.cursor[g.id] = C.periodKey(data.date, g.period);
   S.flashId = id;
   S.entryType = 'expense';
   go('expenses');
-  toast(before ? `${label} geändert` : `${label} gespeichert`, {
+  toast(before ? `${label} geändert` : firstEver ? `${label} gespeichert. Alles bereit 🎉` : `${label} gespeichert`, {
     action: 'Rückgängig',
     onAction: () => before ? saveExpense(g, id, stripMeta(before)) : write(fs.deleteDoc(fs.doc(expCol(g.id), id))),
   });
@@ -599,6 +613,7 @@ function deleteExpense(id) {
   write(fs.deleteDoc(fs.doc(expCol(g.id), id)));
   if (S.editingId === id) { S.editingId = null; go('expenses'); }
   toast(`„${e.desc}“ gelöscht`, { action: 'Rückgängig', onAction: () => saveExpense(g, id, stripMeta(e)) });
+  $('toast').querySelector('button')?.focus();
 }
 
 /* ---------- Migration aus der alten Browser-Version ---------- */
@@ -636,15 +651,15 @@ async function migrate() {
 /* ---------- Ereignis-Verdrahtung (keine Inline-Handler) ---------- */
 const actions = {
   login, emailLogin,
-  newGroup: () => { S.view = 'newGroup'; S.editingId = null; closeDialog(); render(); syncRoute(true); scrollTo(0, 0); $('gName')?.focus(); },
+  newGroup: async () => { if (!await leaveOk()) return; S.view = 'newGroup'; S.editingId = null; closeDialog(); render(); syncRoute(true); scrollTo(0, 0); $('gName')?.focus(); },
   cancelNewGroup: () => { S.view = null; render(); syncRoute(true); },
   createGroup, saveSettings, deleteOrLeaveGroup, migrate, copyInvite, shareInvite, renewInvite, addMember,
   logout: () => { closeDialog(); authM.signOut(auth); },
   openAccount: () => openAccount(),
-  selectGroup: d => selectGroup(d.id),
+  selectGroup: async d => { if (await leaveOk()) selectGroup(d.id); },
   openGroupSheet: () => openGroupSheet(),
   closeDialog,
-  tab: d => go(d.tab, d.type ? { entryType: d.type } : {}),
+  tab: async d => { if (!await leaveOk()) return; if (d.tab === 'settings') S.dirty = false; go(d.tab, d.type ? { entryType: d.type } : {}); },
   prevPeriod: () => shiftCursor(-1), nextPeriod: () => shiftCursor(1),
   thisPeriod: () => { const g = activeGroup(); delete S.cursor[g.id]; render(); },
   claim: d => claimMember(d.id || null),
@@ -680,6 +695,9 @@ document.addEventListener('click', e => {
   actions[t.dataset.action](t.dataset, t, e);
 });
 document.addEventListener('change', e => { const a = e.target.dataset?.change; if (a) actions[a]?.({ ...e.target.dataset, value: e.target.value }, e.target); });
+const markDirty = e => { if (e.target.closest?.('form[data-submit=saveSettings]')) setDirty(true); };
+document.addEventListener('input', markDirty);
+document.addEventListener('change', markDirty);
 document.addEventListener('input', e => { const a = e.target.dataset?.input; if (a) actions[a]?.(e.target.dataset, e.target); });
 document.addEventListener('keydown', e => {
   // Pfeiltasten im Säulendiagramm (Roving Tabindex)
@@ -767,6 +785,7 @@ function renderSidebar() {
   $('groupList').innerHTML = S.groups.length ? groupListHtml() : '<p class="empty">Noch keine Gruppen.</p>';
   $('sideNew').innerHTML = `${ic('plus')} Neue Gruppe`;
   $('sideNew').hidden = !S.groups.length && !S.view;
+  document.querySelector('.sidebar').hidden = !S.groups.length && !local;
   const g = activeGroup();
   $('groupSwitch').innerHTML = S.view === 'newGroup' || !g ? `<span>Deine Gruppen</span>${ic('down')}`
     : `<span aria-hidden="true">${groupIcon(g)}</span><span>${esc(g.name)}</span>${ic('down')}`;
@@ -823,6 +842,7 @@ function renderMain() {
   if (S.tab === 'add' && $('entryForm')) initForm(g);
   if (focusId && el.querySelector('#' + CSS.escape(focusId))) $(focusId).focus();
   if (S.flashId) { el.querySelector(`[data-id="${CSS.escape(S.flashId)}"]`)?.classList.add('flash'); S.flashId = null; }
+  if (S.focusAfter && $(S.focusAfter)) { $(S.focusAfter).focus(); $(S.focusAfter).closest('.card')?.querySelectorAll('li.done').forEach(li => li.classList.add('flash')); S.focusAfter = null; }
 
   // Im Formular auf Mobile: Vollbild-Formular mit fester Speicherleiste statt Navigation
   if (S.tab === 'add' && $('entryForm')) { $('layout').classList.add('form-mode'); return; }
@@ -909,8 +929,9 @@ function renderGroupForm(g) {
       <input type="text" id="gTarget" inputmode="decimal" placeholder="z. B. 300 (optional)" value="${g?.potTargetCents ? C.centsToInput(g.potTargetCents) : ''}">
       <p class="hint">Dient nur als Orientierung in der Übersicht.</p></div>
     ${g ? '' : `<div class="field"><label for="gMyName">Dein Name in der Gruppe</label><input type="text" id="gMyName" maxlength="40" value="${esc(firstName())}" autocomplete="given-name"></div>`}
-    <div class="form-actions">
-      <button class="btn">${g ? 'Änderungen speichern' : 'Gruppe anlegen'}</button>
+    <div class="form-actions ${g ? 'sticky-actions' : ''}">
+      <button class="btn" ${g ? 'id="saveSettingsBtn" disabled' : ''}>${g ? 'Änderungen speichern' : 'Gruppe anlegen'}</button>
+      ${g ? '<span class="hint" id="dirtyHint" style="margin:0">Keine ungespeicherten Änderungen</span>' : ''}
       ${g || !S.groups.length ? '' : '<button type="button" class="btn secondary" data-action="cancelNewGroup">Abbrechen</button>'}
     </div></form>`;
 }
@@ -944,7 +965,7 @@ function renderGroupTab(g) {
   const used = id => S.expenses.some(e => e.payerId === id || e.shares.some(x => x.memberId === id));
   return `<div class="card"><h2>Mitglieder (${g.members.length})</h2>
       <div>${g.members.map(m => `<div class="list-row"><span class="grow"><span class="who">${esc(m.name)}</span>${m.id === me ? '<span class="you">Du</span>' : m.uid ? '<span class="tag">hat Konto</span>' : '<span class="tag">ohne Konto</span>'}</span>
-        ${m.id === me ? '' : used(m.id) ? '<span class="hint" style="margin:0">hat Einträge</span>'
+        ${m.id === me ? '' : used(m.id) ? `<span class="hint" style="margin:0" title="Kann nicht entfernt werden, solange Einträge mit ${esc(m.name)} existieren.">an Einträgen beteiligt</span>`
           : `<button type="button" class="icon-btn danger" data-action="removeMember" data-id="${esc(m.id)}" aria-label="${esc(m.name)} entfernen">${ic('trash')}</button>`}</div>`).join('')}</div>
       ${addMemberForm(g)}
       <p class="hint">Personen ohne Konto (z. B. Freunde im Urlaub) legst du einfach als Namen an. Treten sie später per Link bei, wählen sie ihren Namen aus.</p>
@@ -1000,6 +1021,7 @@ function renderExpenses(g, vis) {
       sub = `${payer} · für ${n === g.members.length ? 'alle' : n === 1 ? (e.shares[0].memberId === me ? 'dich' : name(e.shares[0].memberId)) : n + ' Personen'}`;
       const share = e.shares.find(s => s.memberId === me)?.cents || 0;
       mine = share ? `<small>dein Anteil ${fmt(share)}</small>` : '<small>ohne dich</small>';
+      sub += `<span class="mob-only"> · ${share ? `dein Anteil ${fmt(share)}` : 'ohne dich'}</span>`;
     }
     if (e._pending) sub += ` · <span class="pending">${ic('cloud')} wird übertragen</span>`;
     const plain = e.type === 'settlement' || e.type === 'contribution';
@@ -1074,7 +1096,7 @@ function renderForm(g) {
   const me = myMember(g)?.id;
 
   let html = `<form class="card" id="entryForm" data-submit="submitEntry" novalidate>
-    <div class="card-h"><h2 id="formTitle">${titles[type]}</h2><span>${editing ? `<button type="button" class="icon-btn danger" data-action="deleteExpense" data-id="${esc(editing.id)}" aria-label="Eintrag löschen">${ic('trash')}</button>` : ''}<button type="button" class="icon-btn" data-action="cancelEdit" aria-label="Schließen, ohne zu speichern">${ic('x')}</button></span></div>
+    <div class="card-h"><h2 id="formTitle">${titles[type]}</h2><button type="button" class="icon-btn" data-action="cancelEdit" aria-label="Schließen, ohne zu speichern">${ic('x')}</button></div>
     ${!editing && types.length > 1 ? `<div class="field"><div class="seg" role="radiogroup" aria-label="Art des Eintrags">${types.map(([k, l]) =>
       `<label><input type="radio" name="eType" value="${k}" data-change="entryType" ${k === type ? 'checked' : ''}>${l}</label>`).join('')}</div></div>` : ''}
     <div class="field"><label for="expAmount">Betrag</label>
@@ -1111,6 +1133,7 @@ function renderForm(g) {
       <p class="hint" id="setHint" style="margin:-6px 0 12px"></p>
       ${dateField()}`;
   }
+  if (editing) html += `<div class="delete-row"><button type="button" class="btn ghost danger small" data-action="deleteExpense" data-id="${esc(editing.id)}">${ic('trash')} Eintrag löschen</button></div>`;
   html += `<div class="form-actions sticky-actions">
       <button class="btn lg">${ic('check')} ${editing ? 'Änderungen speichern' : 'Speichern'}</button>
       <button type="button" class="btn secondary lg desk-only" data-action="cancelEdit">Abbrechen</button>
@@ -1206,10 +1229,11 @@ function renderBalances(g) {
   const nm = id => id === me ? 'Du' : esc(memberName(g, id));
   const debtHtml = debts.length === 0
     ? '<div class="empty-state" style="padding:12px"><div class="big" aria-hidden="true">🎉</div><p style="margin:0">Alles ausgeglichen. Niemand schuldet jemandem etwas.</p></div>'
-    : debts.map(d => `<div class="list-row">
+    : debts.map(d => `<div class="list-row debt">
         <span class="grow"><span class="who">${nm(d.from)}</span> <span class="arrow">${ic('arrow', 'an')}</span> <span class="who">${nm(d.to)}</span></span>
         <span class="amt">${fmt(d.cents)}</span>
-        <button type="button" class="btn small ${d.from === me || d.to === me ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} Bezahlt</button><button type="button" class="icon-btn" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag erfassen" title="Teilbetrag erfassen">${ic('pencil')}</button>
+        <span class="debt-actions"><button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}">Teilbetrag</button>
+        <button type="button" class="btn small ${d.from === me || d.to === me ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}" aria-label="Als bezahlt markieren: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}, ${fmt(d.cents)}">${ic('check')} Bezahlt</button></span>
       </div>`).join('');
   let potHtml = '';
   if (pot) {
@@ -1218,8 +1242,8 @@ function renderBalances(g) {
       <p class="hint" style="margin:-6px 0 8px">Guthaben jeder Person in der Kasse: eingezahlt minus eigener Anteil an den Ausgaben aus der Kasse.</p>
       ${g.members.map(m => {
         const v = stake[m.id];
-        const btn = v > 0 ? `<button type="button" class="btn small secondary" data-action="settleDebt" data-from="${POT}" data-to="${esc(m.id)}" data-cents="${v}">Auszahlen</button>`
-          : v < 0 ? `<button type="button" class="btn small secondary" data-action="settleDebt" data-from="${esc(m.id)}" data-to="${POT}" data-cents="${-v}">Nachzahlen</button>` : '';
+        const btn = v > 0 ? `<button type="button" class="btn small secondary" data-action="settleDebt" data-from="${POT}" data-to="${esc(m.id)}" data-cents="${v}" aria-label="${fmt(v)} an ${esc(m.name)} auszahlen">Auszahlen</button>`
+          : v < 0 ? `<button type="button" class="btn small secondary" data-action="settleDebt" data-from="${esc(m.id)}" data-to="${POT}" data-cents="${-v}" aria-label="${esc(m.name)}: ${fmt(-v)} nachzahlen">Nachzahlen</button>` : '';
         return `<div class="list-row"><span class="grow who">${esc(m.name)}${m.id === me ? '<span class="you">Du</span>' : ''}</span>
           <span class="amt ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}">${v < 0 ? '−' + fmt(-v) : v > 0 ? '+' + fmt(v) : fmt(0)}</span>${btn}</div>`;
       }).join('')}
@@ -1250,7 +1274,7 @@ function renderOverview(g, vis) {
     const prev = C.spendingStats(S.expenses.filter(e => C.periodKey(e.date, g.period) === prevKey)).total;
     const diff = st.total - prev;
     const prevName = g.period === 'week' ? C.periodLabel(prevKey, 'week', true) : new Date(prevKey + '-01T00:00:00').toLocaleDateString('de-DE', { month: 'long' });
-    kpis.push(kpi(`ggü. ${prevName}`, prev ? `${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${fmt(Math.abs(diff))}` : '–', prev ? `${prevName}: ${fmt(prev)}` : 'keine Ausgaben davor'));
+    kpis.push(kpi(`Vergleich zu ${prevName}`, prev ? `${diff > 0 ? '+' : diff < 0 ? '−' : '±'}${fmt(Math.abs(diff))}` : '–', prev ? `${prevName}: ${fmt(prev)}` : 'keine Ausgaben davor'));
   } else {
     const dates = vis.filter(C.isSpending).map(e => e.date);
     const from = g.startDate || dates[0], to = g.endDate || dates[dates.length - 1];
@@ -1279,7 +1303,7 @@ function renderChecklist(g) {
   return `<div class="card"><h2>Los geht’s: richte „${esc(g.name)}“ ein</h2><ol class="steps">
     ${step(1, people, 'Wer ist noch dabei?', `<p class="hint" style="margin:0">Nur ein Name genügt, ein Konto ist nicht nötig.</p>${addMemberForm(g, false)}`)}
     ${step(2, invited, 'Die anderen per Link einladen <span class="zero">(optional)</span>', `<p class="hint" style="margin:0 0 8px">Dann sehen und ergänzen alle die Ausgaben auf ihrem eigenen Handy.</p>${inviteBox(g, !people)}`)}
-    ${step(3, first, 'Erste Ausgabe eintragen', people ? `<button class="btn" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button>` : '<p class="hint" style="margin:0">Geht los, sobald jemand dabei ist.</p>')}
+    ${step(3, first, 'Erste Ausgabe eintragen', people ? `<button class="btn" id="startFirst" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button>` : '<p class="hint" style="margin:0">Geht los, sobald jemand dabei ist.</p>')}
   </ol></div>`;
 }
 
@@ -1293,9 +1317,10 @@ function renderStanding(g, me) {
   const rows = mine.map(d => {
     const out = d.from === me.id;
     const other = esc(memberName(g, out ? d.to : d.from));
-    return `<div class="list-row"><span class="grow">${out ? `Du zahlst <b>${other}</b>` : `<b>${other}</b> zahlt dir`}</span>
+    return `<div class="list-row debt"><span class="grow">${out ? `Du zahlst <b>${other}</b>` : `<b>${other}</b> zahlt dir`}</span>
       <span class="amt ${out ? 'neg' : 'pos'}">${fmt(d.cents)}</span>
-      <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button><button type="button" class="icon-btn" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag erfassen" title="Teilbetrag erfassen">${ic('pencil')}</button></div>`;
+      <span class="debt-actions"><button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag ${out ? `an ${other}` : `von ${other}`} erfassen">Teilbetrag</button>
+      <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}" aria-label="${out ? `Bezahlt: ${fmt(d.cents)} an ${other}` : `Erhalten: ${fmt(d.cents)} von ${other}`}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button></span></div>`;
   }).join('');
   return `<section class="card" aria-labelledby="standL"><div class="hero">
       <div><div class="h-label" id="standL">Dein Stand${isRecurring(g) ? ' über alle Zeiträume' : ''}</div><div class="h-value">${value}</div>
@@ -1313,7 +1338,8 @@ function personChart(g, st) {
       <div class="hbar-track"><div class="hbar" style="width:${(v / max * 100).toFixed(1)}%;background:${color}"></div></div><span>${fmt(v)}</span></div>`;
   return `<div class="card"><h2>Bezahlt und Anteil pro Person</h2>
     <div class="legend"><span><i style="background:var(--s1)"></i>bezahlt</span><span><i style="background:var(--s2)"></i>eigener Anteil</span></div>
-    ${rows.map(r => `<div class="hbar-row"><span class="name" title="${esc(r.name)}">${esc(r.name)}</span><div class="hbar-pair">
+    ${rows.map(r => `<div class="hbar-row"><span class="sr-only">${esc(r.name)}: bezahlt ${fmt(r.paid)}${r.pot ? '' : `, Anteil ${fmt(r.share)}`}</span>
+      <span class="name" title="${esc(r.name)}" aria-hidden="true">${esc(r.name)}</span><div class="hbar-pair" aria-hidden="true">
       ${bar(r.paid, 'var(--s1)', `${r.name} hat bezahlt`)}${r.pot ? '' : bar(r.share, 'var(--s2)', `Anteil von ${r.name}`)}</div></div>`).join('')}
   </div>`;
 }
@@ -1331,11 +1357,11 @@ function categoryChart(st) {
     return s;
   }).join('');
   return `<div class="card"><h2>Nach Kategorie</h2><div class="donut-wrap">
-    <svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Ringdiagramm: Ausgaben nach Kategorie, gesamt ${fmt(st.total)}" aria-describedby="catLegend">${segs}
+    <svg width="132" height="132" viewBox="0 0 160 160" role="img" aria-label="Ringdiagramm: Ausgaben nach Kategorie, gesamt ${fmt(st.total)}" aria-describedby="catLegend">${segs}
       <text class="d-label" x="80" y="76" text-anchor="middle" font-size="11">gesamt</text>
       <text class="d-value" x="80" y="94" text-anchor="middle" font-size="15" font-weight="700">${fmt(st.total)}</text></svg>
-    <div class="cat-legend" id="catLegend">${items.map(c => `<div><span><i style="background:${c.color}"></i>${c.icon} ${esc(c.name)}</span>
-      <span>${fmt(c.v)} · ${Math.round(c.v / st.total * 100)} %</span></div>`).join('')}</div>
+    <div class="cat-legend" id="catLegend">${items.map(c => `<div><span class="cl-name"><i style="background:${c.color}"></i>${c.icon} ${esc(c.name)}<small>${fmt(c.v)}</small></span>
+      <span class="cl-pct">${Math.round(c.v / st.total * 100)} %</span></div>`).join('')}</div>
   </div></div>`;
 }
 
