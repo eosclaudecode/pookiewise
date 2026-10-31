@@ -8,14 +8,16 @@ const LEGACY_KEY = 'splitclone_v1';
 
 // Feste Kategorien; die Farbe hängt an der Kategorie, nie an ihrem Rang
 const CATEGORIES = [
-  { id: 'food', icon: '🍽️', name: 'Essen & Trinken', example: 'Pizza', color: 'var(--s1)' },
-  { id: 'groceries', icon: '🛒', name: 'Einkauf', example: 'Supermarkt', color: 'var(--s4)' },
-  { id: 'lodging', icon: '🏨', name: 'Unterkunft', example: 'Hotel', color: 'var(--s2)' },
-  { id: 'transport', icon: '🚗', name: 'Transport', example: 'Tanken', color: 'var(--s3)' },
-  { id: 'fun', icon: '🎉', name: 'Freizeit', example: 'Kino', color: 'var(--s5)' },
-  { id: 'home', icon: '🏠', name: 'Haushalt & Fixkosten', example: 'Miete', color: 'var(--s6)' },
-  { id: 'other', icon: '📦', name: 'Sonstiges', example: 'Geschenk', color: 'var(--s-other)' },
+  { id: 'food', svg: 'food', name: 'Essen & Trinken', example: 'Pizza', color: 'var(--s1)' },
+  { id: 'groceries', svg: 'cart', name: 'Einkauf', example: 'Supermarkt', color: 'var(--s4)' },
+  { id: 'lodging', svg: 'bed', name: 'Unterkunft', example: 'Hotel', color: 'var(--s2)' },
+  { id: 'transport', svg: 'car', name: 'Transport', example: 'Tanken', color: 'var(--s3)' },
+  { id: 'fun', svg: 'ticket', name: 'Freizeit', example: 'Kino', color: 'var(--s5)' },
+  { id: 'home', svg: 'home', name: 'Haushalt & Fixkosten', example: 'Miete', color: 'var(--s6)' },
+  { id: 'other', svg: 'box', name: 'Sonstiges', example: 'Geschenk', color: 'var(--s-other)' },
 ];
+// Kategorie-Symbol: Linien-Icon in Kategoriefarbe
+const catIcon = c => `<span class="c-ic" style="--c:${c.color}" aria-hidden="true">${ic(c.svg)}</span>`;
 const cat = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length - 1];
 
 /* ---------- State ---------- */
@@ -48,6 +50,14 @@ const ICONS = {
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
+  food: '<path d="M7 3v8M5 3v5a2 2 0 004 0V3M7 11v10M17 3c-2 1.5-3 4-3 7h3v11"/>',
+  cart: '<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.5 12h12L22 7H6"/>',
+  bed: '<path d="M3 18V6M3 14h18v4M21 14v-3a3 3 0 00-3-3h-8v6"/><circle cx="6.5" cy="10.5" r="1.5"/>',
+  car: '<path d="M5 16l1.5-6A2 2 0 018.4 8.5h7.2a2 2 0 011.9 1.5L19 16"/><rect x="3" y="13" width="18" height="5" rx="1.5"/><path d="M6.5 18v2M17.5 18v2"/>',
+  ticket: '<path d="M3 8a2 2 0 002-2h14a2 2 0 002 2v2a2 2 0 000 4v2a2 2 0 00-2 2H5a2 2 0 00-2-2v-2a2 2 0 000-4z"/><path d="M14 6v2M14 11v2M14 16v2"/>',
+  box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  bell: '<path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 21h4"/>',
   bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
   cloud: '<path d="M7 18a4.5 4.5 0 01-.6-9 6 6 0 0111.5 1.5A3.8 3.8 0 0117.5 18z"/><path d="M12 11v3l2 1"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
@@ -71,7 +81,12 @@ function toast(msg, opt = {}) {
   armToast(opt.action ? 10000 : 4000);
 }
 function armToast(ms) { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, ms); }
-function hideToast() { $('toast').hidden = true; toastUndo = null; }
+let toastReturn = null;
+function hideToast() {
+  const had = $('toast').contains(document.activeElement);
+  $('toast').hidden = true; toastUndo = null;
+  if (had) $(toastReturn)?.focus();
+}
 $('toast').addEventListener('pointerenter', () => clearTimeout(toastTimer));
 $('toast').addEventListener('focusin', () => clearTimeout(toastTimer));
 $('toast').addEventListener('pointerleave', () => armToast(4000));
@@ -152,8 +167,14 @@ function syncRoute(push) {
   if (location.hash === h || (!h && !location.hash)) return;
   history[push ? 'pushState' : 'replaceState'](null, '', location.pathname + h);
 }
-addEventListener('popstate', () => {
+addEventListener('popstate', async () => {
   if (!S.user) return;
+  if (S.dirty && S.tab === 'settings') {
+    const back = location.hash;
+    history.pushState(null, '', location.pathname + `#g/${S.activeGroupId}/settings`);
+    if (!await leaveOk()) return;
+    history.replaceState(null, '', location.pathname + back);
+  }
   if (location.hash === '#neu') { S.view = 'newGroup'; render(); return; }
   if (readRoute()) { lsSet('pw_active', S.activeGroupId); subscribeExpenses(); }
   else S.view = null;
@@ -328,6 +349,7 @@ function subscribeExpenses(attempt = 0) {
   unsubExp = fs.onSnapshot(expCol(gid), { includeMetadataChanges: true }, snap => {
     S.expenses = snap.docs.map(d => ({ id: d.id, ...d.data(), _pending: !!d.metadata?.hasPendingWrites }))
       .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : 1);
+    cacheBalance();
     softRender();
   }, err => {
     if (S.activeGroupId !== gid) return;
@@ -338,6 +360,20 @@ function subscribeExpenses(attempt = 0) {
 }
 
 /* ---------- Helfer ---------- */
+// Eigener Saldo je Gruppe, für die Gruppenliste (zuletzt gesehener Stand)
+let balCache = {};
+try { balCache = JSON.parse(lsGet('pw_bal')) || {}; } catch {}
+function cacheBalance() {
+  const g = activeGroup(), me = g && myMember(g);
+  if (!me || S.expensesFor !== g.id) return;
+  balCache[g.id] = debtsOf(g).b[me.id] || 0;
+  lsSet('pw_bal', JSON.stringify(balCache));
+}
+const balTag = g => {
+  const v = balCache[g.id];
+  if (v == null) return '';
+  return `<span class="g-bal ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}" aria-label="${v > 0 ? 'Du bekommst ' + fmt(v) : v < 0 ? 'Du schuldest ' + fmt(-v) : 'quitt'}">${v > 0 ? '+' + fmt(v) : v < 0 ? '−' + fmt(-v) : 'quitt'}</span> · `;
+};
 const groupRef = id => fs.doc(db, 'groups', id);
 const expCol = gid => fs.collection(db, 'groups', gid, 'expenses');
 const activeGroup = () => S.groups.find(g => g.id === S.activeGroupId) || null;
@@ -379,11 +415,13 @@ function go(tab, extra = {}) {
   scrollTo(0, 0);
   if (tab === 'add' && !S.editingId) $('expAmount')?.focus({ preventScroll: true });
 }
+const offlineNote = () => navigator.onLine ? '' : '. Wird übertragen, sobald du online bist';
 // Ungespeicherte Einstellungen: Button aktivieren, beim Verlassen nachfragen
 function setDirty(v) {
   S.dirty = v;
-  if ($('saveSettingsBtn')) { $('saveSettingsBtn').disabled = !v; $('dirtyHint').textContent = v ? 'Ungespeicherte Änderungen' : 'Keine ungespeicherten Änderungen'; }
+  if ($('saveSettingsBtn')) { $('saveSettingsBtn').setAttribute('aria-disabled', String(!v)); $('dirtyHint').textContent = v ? 'Ungespeicherte Änderungen' : ''; }
 }
+addEventListener('beforeunload', e => { if (S.dirty && S.tab === 'settings') { e.preventDefault(); e.returnValue = ''; } });
 async function leaveOk() {
   if (!S.dirty || S.tab !== 'settings') return true;
   const ok = await ask({ title: 'Änderungen verwerfen?', text: 'Du hast die Einstellungen geändert, aber noch nicht gespeichert.', ok: 'Verwerfen', danger: true });
@@ -431,10 +469,12 @@ function createGroup() {
 
 function saveSettings() {
   const g = activeGroup(); if (!g) return;
+  if (!S.dirty) { $('dirtyHint').textContent = 'Noch nichts geändert.'; return; }
   const data = readGroupForm(); if (!data) return;
   write(fs.updateDoc(groupRef(g.id), data));
   setDirty(false);
-  toast('Einstellungen gespeichert');
+  $('dirtyHint').textContent = 'Gespeichert ✓';
+  toast('Einstellungen gespeichert' + offlineNote());
 }
 
 async function deleteOrLeaveGroup() {
@@ -532,7 +572,7 @@ function commitEntry(g, data, label) {
   S.flashId = id;
   S.entryType = 'expense';
   go('expenses');
-  toast(before ? `${label} geändert` : firstEver ? `${label} gespeichert. Alles bereit 🎉` : `${label} gespeichert`, {
+  toast((before ? `${label} geändert` : firstEver ? `${label} gespeichert. Alles bereit 🎉` : `${label} gespeichert`) + offlineNote(), {
     action: 'Rückgängig',
     onAction: () => before ? saveExpense(g, id, stripMeta(before)) : write(fs.deleteDoc(fs.doc(expCol(g.id), id))),
   });
@@ -594,6 +634,18 @@ function submitEntry() {
   commitEntry(g, { type: type2, desc, amountCents: amount, payerId, date, mode, shares, category }, `„${desc}“ (${fmt(amount)})`);
 }
 
+// Zahlungserinnerung über die Teilen-Funktion (oder Zwischenablage)
+async function remind(fromId) {
+  const g = activeGroup(); if (!g) return;
+  const me = myMember(g)?.id;
+  const d = debtsOf(g).debts.find(x => x.from === fromId && x.to === me); if (!d) return;
+  const text = `Hi ${memberName(g, fromId)}, kleine Erinnerung: Für „${g.name}“ bekomme ich von dir noch ${fmt(d.cents)}. Den Stand siehst du in PookieWise. Danke!`;
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); toast('Erinnerung kopiert. Füge sie im Messenger ein.'); }
+  } catch (err) { if (err.name !== 'AbortError') toast('Erinnerung konnte nicht geteilt werden.', { error: true }); }
+}
+
 // Ein-Klick-Ausgleich aus der Schuldenliste, mit Rückgängig
 function settleDebt(fromId, toId, cents) {
   const g = activeGroup(); if (!g) return;
@@ -613,6 +665,7 @@ function deleteExpense(id) {
   write(fs.deleteDoc(fs.doc(expCol(g.id), id)));
   if (S.editingId === id) { S.editingId = null; go('expenses'); }
   toast(`„${e.desc}“ gelöscht`, { action: 'Rückgängig', onAction: () => saveExpense(g, id, stripMeta(e)) });
+  toastReturn = 'entriesCard';
   $('toast').querySelector('button')?.focus();
 }
 
@@ -676,7 +729,14 @@ const actions = {
   toggleAll: () => { const cbs = [...document.querySelectorAll('.p-check')]; const all = cbs.every(c => c.checked); cbs.forEach(c => c.checked = !all); renderParticipants(); },
   catPick: () => { const c = cat(document.querySelector('input[name=expCat]:checked')?.value); $('expDesc').placeholder = `z. B. ${c.example} (sonst „${c.name}“)`; },
   settleFrom: () => prefillSettlement(false),
-  settleCustom: d => { S.settlePair = { from: d.from, to: d.to }; go('add', { entryType: 'settlement' }); },
+  filterEntries: () => {
+    S.q = $('entrySearch').value; S.filter = document.querySelector('input[name=eFilter]:checked')?.value || 'all';
+    const g = activeGroup(); $('entryList').innerHTML = entryList(g, visibleExpenses(g));
+  },
+  clearFilter: () => { S.q = ''; S.filter = 'all'; renderMain(); $('entrySearch')?.focus(); },
+  remind: d => remind(d.from),
+  potLink: () => actions.tab({ tab: 'balances' }),
+  settleCustom: d => { S.settlePair = { from: d.from, to: d.to, cents: Number(d.cents) || 0 }; go('add', { entryType: 'settlement' }); },
   dateQuick: d => {
     if (d.value === 'other') { $('expDate').hidden = false; $('expDate').focus(); try { $('expDate').showPicker(); } catch {} }
     else { $('expDate').value = d.value === 'today' ? C.today() : yesterday(); $('expDate').hidden = true; }
@@ -774,7 +834,7 @@ const groupSub = g => `${g.members.length} ${g.members.length === 1 ? 'Person' :
 function groupListHtml() {
   return S.groups.map(g => `<button class="group-item" data-action="selectGroup" data-id="${esc(g.id)}" ${g.id === S.activeGroupId && !S.view ? 'aria-current="true"' : ''}>
       <span class="g-icon" aria-hidden="true">${groupIcon(g)}</span>
-      <span class="g-text"><span class="g-name">${esc(g.name)}</span><span class="g-sub">${groupSub(g)}</span></span>
+      <span class="g-text"><span class="g-name">${esc(g.name)}</span><span class="g-sub">${balTag(g)}${groupSub(g)}</span></span>
     </button>`).join('');
 }
 
@@ -814,6 +874,7 @@ function renderMain() {
   const el = $('mainArea');
   const nav = $('bottomNav');
   nav.hidden = true; $('layout').classList.remove('has-nav', 'form-mode');
+  $('layout').classList.toggle('on-overview', S.tab === 'overview');
   if (S.view === 'newGroup') { el.innerHTML = renderGroupForm(null); return; }
   const g = activeGroup();
   if (!g) { el.innerHTML = renderWelcome(); return; }
@@ -825,7 +886,7 @@ function renderMain() {
       <div><h1>${esc(g.name)}</h1><div class="meta">${groupMeta(g)}</div></div></div>`;
   html += `<div class="tabbar"><div class="tabs" role="tablist" aria-label="Bereiche">${NAV.map(([k, label]) =>
     `<button class="tab" role="tab" id="tab-${k}" aria-controls="panel" aria-selected="${(S.tab === 'settings' ? 'group' : S.tab) === k}" tabindex="${(S.tab === 'settings' ? 'group' : S.tab) === k ? 0 : -1}" data-action="tab" data-tab="${k}">${label}</button>`).join('')}</div>
-    <button class="btn small ${g.members.length < 2 && !g.potEnabled ? 'secondary' : ''}" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button></div>`;
+    ${g.members.length < 2 && !g.potEnabled ? '' : `<button class="btn small" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button>`}</div>`;
 
   let body;
   if (S.tab === 'group') body = renderGroupTab(g);
@@ -862,7 +923,7 @@ function groupMeta(g) {
     parts.push(g.endDate ? `${f(g.startDate, { day: 'numeric', month: 'short' })} – ${f(g.endDate, { day: 'numeric', month: 'short', year: 'numeric' })}` : `ab ${f(g.startDate, { day: 'numeric', month: 'short' })}`);
   }
   if (isRecurring(g)) parts.push(g.period === 'week' ? 'Wochenansicht' : 'Monatsansicht');
-  return parts.join(' · ') + (usesPot(g) ? ` <span class="badge pot">${ic('bank')} Kasse ${fmt(C.potCash(S.expenses))}</span>` : '');
+  return parts.join(' · ') + (usesPot(g) ? ` <button type="button" class="badge pot" data-action="potLink" aria-label="Kasse: ${fmt(C.potCash(S.expenses))}, zum Ausgleich">${ic('bank')} Kasse ${fmt(C.potCash(S.expenses))}</button>` : '');
 }
 
 function periodNav(g) {
@@ -930,8 +991,8 @@ function renderGroupForm(g) {
       <p class="hint">Dient nur als Orientierung in der Übersicht.</p></div>
     ${g ? '' : `<div class="field"><label for="gMyName">Dein Name in der Gruppe</label><input type="text" id="gMyName" maxlength="40" value="${esc(firstName())}" autocomplete="given-name"></div>`}
     <div class="form-actions ${g ? 'sticky-actions' : ''}">
-      <button class="btn" ${g ? 'id="saveSettingsBtn" disabled' : ''}>${g ? 'Änderungen speichern' : 'Gruppe anlegen'}</button>
-      ${g ? '<span class="hint" id="dirtyHint" style="margin:0">Keine ungespeicherten Änderungen</span>' : ''}
+      <button class="btn" ${g ? 'id="saveSettingsBtn" aria-disabled="true" aria-describedby="dirtyHint"' : ''}>${g ? 'Änderungen speichern' : 'Gruppe anlegen'}</button>
+      ${g ? '<span class="hint" id="dirtyHint" style="margin:0" aria-live="polite"></span>' : ''}
       ${g || !S.groups.length ? '' : '<button type="button" class="btn secondary" data-action="cancelNewGroup">Abbrechen</button>'}
     </div></form>`;
 }
@@ -1001,27 +1062,44 @@ function renderExpenses(g, vis) {
     <h2>Noch keine Einträge${isRecurring(g) ? ' in diesem Zeitraum' : ''}</h2>
     <p>Trag die erste Ausgabe ein. PookieWise rechnet dann aus, wer wem etwas schuldet.</p>
     <button class="btn" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button></div>`;
+  const f = S.filter || 'all';
+  const chip = (k, l) => `<label class="chip"><input type="radio" name="eFilter" value="${k}" data-change="filterEntries" ${f === k ? 'checked' : ''}>${l}</label>`;
+  return `<div class="card" id="entriesCard" tabindex="-1" aria-label="Einträge">
+    <div class="filters"><div class="search"><label for="entrySearch" class="sr-only">Einträge durchsuchen</label>${ic('search')}
+      <input type="search" id="entrySearch" placeholder="Suchen, z. B. Pizza" value="${esc(S.q || '')}" data-input="filterEntries" autocomplete="off"></div>
+      <div class="chips" role="radiogroup" aria-label="Filter">${chip('all', 'Alle')}${chip('paid', 'Von mir bezahlt')}${chip('mine', 'Mit mir')}${chip('settle', 'Ausgleich & Kasse')}</div></div>
+    <div id="entryList" aria-live="polite">${entryList(g, vis)}</div>
+    <p class="note">Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p></div>`;
+}
+function entryList(g, vis) {
   const me = myMember(g)?.id;
+  const q = (S.q || '').trim().toLowerCase(), f = S.filter || 'all';
+  const plain = e => e.type === 'settlement' || e.type === 'contribution';
+  const list = [...vis].reverse().filter(e =>
+    (!q || [e.desc, cat(e.category).name, memberName(g, e.payerId)].some(t => t.toLowerCase().includes(q))) &&
+    (f === 'all' || (f === 'paid' && e.payerId === me && !plain(e)) || (f === 'mine' && !plain(e) && e.shares.some(x => x.memberId === me)) || (f === 'settle' && plain(e))));
+  if (!list.length) return `<p class="empty" style="padding:16px 4px">Keine passenden Einträge${isRecurring(g) ? ' in diesem Zeitraum' : ''}. <button type="button" class="btn ghost small" data-action="clearFilter">Filter zurücksetzen</button></p>`;
   let lastDay = null, html = '';
-  for (const e of [...vis].reverse()) {
+  for (const e of list) {
     if (e.date !== lastDay) { html += `<h3 class="day-h">${esc(dayLabel(e.date))}</h3>`; lastDay = e.date; }
     let icon, title, sub, mine = '';
     const name = id => esc(memberName(g, id));
     if (e.type === 'settlement') {
-      icon = '💸'; title = 'Ausgleich';
+      icon = `<span class="c-ic" style="--c:var(--brand)" aria-hidden="true">${ic('scale')}</span>`; title = 'Ausgleich';
       const to = e.shares[0].memberId;
       sub = `${e.payerId === me ? 'Du' : name(e.payerId)} an ${to === me ? 'dich' : name(to)}`;
     } else if (e.type === 'contribution') {
-      icon = '🏦'; title = 'Einzahlung';
+      icon = `<span class="c-ic" style="--c:var(--pot)" aria-hidden="true">${ic('bank')}</span>`; title = 'Einzahlung';
       sub = `in die Kasse, von ${e.payerId === me ? 'dir' : name(e.payerId)}`;
     } else {
-      icon = cat(e.category).icon; title = esc(e.desc);
+      icon = catIcon(cat(e.category)); title = esc(e.desc);
       const n = e.shares.length;
       const payer = e.payerId === POT ? 'Aus der Kasse bezahlt' : e.payerId === me ? 'Du hast bezahlt' : `${name(e.payerId)} hat bezahlt`;
-      sub = `${payer} · für ${n === g.members.length ? 'alle' : n === 1 ? (e.shares[0].memberId === me ? 'dich' : name(e.shares[0].memberId)) : n + ' Personen'}`;
+      const forWhom = n === g.members.length ? 'alle' : n === 1 ? (e.shares[0].memberId === me ? 'dich' : name(e.shares[0].memberId)) : n + ' Personen';
+      const short = `von ${e.payerId === POT ? 'der Kasse' : e.payerId === me ? 'dir' : name(e.payerId)} · für ${n === g.members.length || n === 1 ? forWhom : n}`;
+      sub = `<span class="desk-only">${payer} · für ${forWhom}</span><span class="mob-only">${short}</span>`;
       const share = e.shares.find(s => s.memberId === me)?.cents || 0;
-      mine = share ? `<small>dein Anteil ${fmt(share)}</small>` : '<small>ohne dich</small>';
-      sub += `<span class="mob-only"> · ${share ? `dein Anteil ${fmt(share)}` : 'ohne dich'}</span>`;
+      mine = share ? `<small><span class="desk-only">dein Anteil </span><span class="mob-only">du: </span>${fmt(share)}</small>` : '<small>ohne dich</small>';
     }
     if (e._pending) sub += ` · <span class="pending">${ic('cloud')} wird übertragen</span>`;
     const plain = e.type === 'settlement' || e.type === 'contribution';
@@ -1030,7 +1108,7 @@ function renderExpenses(g, vis) {
       <span class="e-text"><span class="e-title">${title}</span><span class="e-sub">${sub}</span></span>
       <span class="e-amt"><b>${fmt(e.amountCents)}</b>${mine}</span></button>`;
   }
-  return `<div class="card">${html}<p class="note">Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p></div>`;
+  return html;
 }
 
 function memberOptions(g, withPot, selected) {
@@ -1052,7 +1130,7 @@ function prefillSettlement(initial) {
   let d;
   if (initial) {
     const pair = S.settlePair; S.settlePair = null;
-    d = pair ? debts.find(x => x.from === pair.from && x.to === pair.to) || { ...pair, cents: 0 } : debts.find(x => x.from === me || x.to === me) || debts[0];
+    d = pair ? debts.find(x => x.from === pair.from && x.to === pair.to) || pair : debts.find(x => x.from === me || x.to === me) || debts[0];
     if (d) $('setFrom').value = d.from;
     if (pair) { $('setTo').value = pair.to; $('expAmount').value = ''; $('setHint').textContent = d.cents ? `Offen sind ${fmt(d.cents)}. Trag ein, wie viel davon bezahlt wurde.` : ''; return; }
   } else d = debts.find(x => x.from === $('setFrom').value);
@@ -1107,7 +1185,7 @@ function renderForm(g) {
       <input type="text" id="expDesc" maxlength="200" placeholder="z. B. Pizza (sonst „Essen & Trinken“)"></div>
     <div class="field"><span class="label" id="catL">Kategorie</span>
       <div class="chips" role="radiogroup" aria-labelledby="catL">${CATEGORIES.map((c, i) =>
-        `<label class="chip"><input type="radio" name="expCat" value="${c.id}" data-change="catPick" ${i === 0 ? 'checked' : ''}><span aria-hidden="true">${c.icon}</span>${c.name}</label>`).join('')}</div></div>
+        `<label class="chip"><input type="radio" name="expCat" value="${c.id}" data-change="catPick" ${i === 0 ? 'checked' : ''}>${catIcon(c)}${c.name}</label>`).join('')}</div></div>
     <div class="field"><label for="expPayer">Bezahlt von</label>
       <select id="expPayer">${memberOptions(g, pot, me)}</select></div>
     ${dateField()}
@@ -1232,7 +1310,7 @@ function renderBalances(g) {
     : debts.map(d => `<div class="list-row debt">
         <span class="grow"><span class="who">${nm(d.from)}</span> <span class="arrow">${ic('arrow', 'an')}</span> <span class="who">${nm(d.to)}</span></span>
         <span class="amt">${fmt(d.cents)}</span>
-        <span class="debt-actions"><button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}">Teilbetrag</button>
+ <span class="debt-actions">${d.to === me ? `<button type="button" class="btn ghost small" data-action="remind" data-from="${esc(d.from)}" aria-label="${esc(memberName(g, d.from))} an ${fmt(d.cents)} erinnern">${ic('bell')} Erinnern</button>` : ''}<button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}">Teilbetrag</button>
         <button type="button" class="btn small ${d.from === me || d.to === me ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}" aria-label="Als bezahlt markieren: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}, ${fmt(d.cents)}">${ic('check')} Bezahlt</button></span>
       </div>`).join('');
   let potHtml = '';
@@ -1244,8 +1322,9 @@ function renderBalances(g) {
         const v = stake[m.id];
         const btn = v > 0 ? `<button type="button" class="btn small secondary" data-action="settleDebt" data-from="${POT}" data-to="${esc(m.id)}" data-cents="${v}" aria-label="${fmt(v)} an ${esc(m.name)} auszahlen">Auszahlen</button>`
           : v < 0 ? `<button type="button" class="btn small secondary" data-action="settleDebt" data-from="${esc(m.id)}" data-to="${POT}" data-cents="${-v}" aria-label="${esc(m.name)}: ${fmt(-v)} nachzahlen">Nachzahlen</button>` : '';
-        return `<div class="list-row"><span class="grow who">${esc(m.name)}${m.id === me ? '<span class="you">Du</span>' : ''}</span>
-          <span class="amt ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}">${v < 0 ? '−' + fmt(-v) : v > 0 ? '+' + fmt(v) : fmt(0)}</span>${btn}</div>`;
+        const part = v ? `<button type="button" class="btn ghost small" data-action="settleCustom" data-from="${v > 0 ? POT : esc(m.id)}" data-to="${v > 0 ? esc(m.id) : POT}" data-cents="${Math.abs(v)}" aria-label="Teilbetrag ${v > 0 ? 'an ' + esc(m.name) + ' auszahlen' : 'von ' + esc(m.name) + ' nachzahlen'}">Teilbetrag</button>` : '';
+        return `<div class="list-row debt"><span class="grow who">${esc(m.name)}${m.id === me ? '<span class="you">Du</span>' : ''}</span>
+          <span class="amt ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}">${v < 0 ? '−' + fmt(-v) : v > 0 ? '+' + fmt(v) : fmt(0)}</span>${v ? `<span class="debt-actions">${part}${btn}</span>` : ''}</div>`;
       }).join('')}
       <p class="note">Löst ihr die Kasse auf (z. B. am Ende des Urlaubs), wird jedes Guthaben ausgezahlt und fehlende Beträge werden nachgezahlt.</p></div>`;
   }
@@ -1257,7 +1336,7 @@ function renderBalances(g) {
   return `<div class="card"><div class="card-h"><h2>So gleicht ihr aus</h2>
       <button type="button" class="btn ghost small" data-action="tab" data-tab="add" data-type="settlement">${ic('plus')} Zahlung manuell erfassen</button></div>
       ${debtHtml}
-      ${debts.length ? `<p class="note">Die wenigsten Überweisungen, mit denen alle quitt sind. Tippe auf „Bezahlt“, sobald das Geld überwiesen ist, oder auf den Stift für einen Teilbetrag.${pot ? ' Die Kasse wird getrennt verrechnet.' : ''}${isRecurring(g) ? ' Gilt über alle Zeiträume.' : ''}</p>` : ''}</div>
+      ${debts.length ? `<p class="note">Die wenigsten Überweisungen, mit denen alle quitt sind. Tippe auf „Bezahlt“, sobald das Geld überwiesen ist, oder auf „Teilbetrag“, wenn erst ein Teil überwiesen wurde.${pot ? ' Die Kasse wird getrennt verrechnet.' : ''}${isRecurring(g) ? ' Gilt über alle Zeiträume.' : ''}</p>` : ''}</div>
     ${potHtml}
     <div class="card"><h2>Salden</h2>${balHtml}</div>`;
 }
@@ -1319,7 +1398,7 @@ function renderStanding(g, me) {
     const other = esc(memberName(g, out ? d.to : d.from));
     return `<div class="list-row debt"><span class="grow">${out ? `Du zahlst <b>${other}</b>` : `<b>${other}</b> zahlt dir`}</span>
       <span class="amt ${out ? 'neg' : 'pos'}">${fmt(d.cents)}</span>
-      <span class="debt-actions"><button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag ${out ? `an ${other}` : `von ${other}`} erfassen">Teilbetrag</button>
+      <span class="debt-actions">${out ? '' : `<button type="button" class="btn ghost small" data-action="remind" data-from="${esc(d.from)}" aria-label="${other} an ${fmt(d.cents)} erinnern">${ic('bell')} Erinnern</button>`}<button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag ${out ? `an ${other}` : `von ${other}`} erfassen">Teilbetrag</button>
       <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}" aria-label="${out ? `Bezahlt: ${fmt(d.cents)} an ${other}` : `Erhalten: ${fmt(d.cents)} von ${other}`}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button></span></div>`;
   }).join('');
   return `<section class="card" aria-labelledby="standL"><div class="hero">
@@ -1352,7 +1431,7 @@ function categoryChart(st) {
     const len = c.v / st.total * L;
     const s = `<circle class="seg" cx="80" cy="80" r="${R}" fill="none" stroke="${c.color}" stroke-width="${W}"
       stroke-dasharray="${Math.max(0.5, len - gap).toFixed(2)} ${(L - Math.max(0.5, len - gap)).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"
-      transform="rotate(-90 80 80)" data-tip="${esc(c.icon + ' ' + c.name)}: ${fmt(c.v)} (${Math.round(c.v / st.total * 100)} %)"></circle>`;
+      transform="rotate(-90 80 80)"  data-tip="${esc(c.name)}: ${fmt(c.v)} (${Math.round(c.v / st.total * 100)} %)"></circle>`;
     off += len;
     return s;
   }).join('');
@@ -1360,7 +1439,7 @@ function categoryChart(st) {
     <svg width="132" height="132" viewBox="0 0 160 160" role="img" aria-label="Ringdiagramm: Ausgaben nach Kategorie, gesamt ${fmt(st.total)}" aria-describedby="catLegend">${segs}
       <text class="d-label" x="80" y="76" text-anchor="middle" font-size="11">gesamt</text>
       <text class="d-value" x="80" y="94" text-anchor="middle" font-size="15" font-weight="700">${fmt(st.total)}</text></svg>
-    <div class="cat-legend" id="catLegend">${items.map(c => `<div><span class="cl-name"><i style="background:${c.color}"></i>${c.icon} ${esc(c.name)}<small>${fmt(c.v)}</small></span>
+    <div class="cat-legend" id="catLegend">${items.map(c => `<div><span class="cl-name"><i style="background:${c.color}"></i>${esc(c.name)}<small>${fmt(c.v)}</small></span>
       <span class="cl-pct">${Math.round(c.v / st.total * 100)} %</span></div>`).join('')}</div>
   </div></div>`;
 }
