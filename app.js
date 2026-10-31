@@ -48,22 +48,44 @@ const ICONS = {
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
+  bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
+  wifi: '<path d="M2 2l20 20M8.5 16.5a5 5 0 017 0M5 12.9a10 10 0 015.2-2.8M19 12.9a10 10 0 00-2.4-1.7M12 20h.01"/>',
 };
 const ic = (n, label) => `<svg class="i" viewBox="0 0 24 24" ${label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"'}>${ICONS[n]}</svg>`;
-const GROUP_ICONS = ['✈️', '🏖️', '🏠', '🎉', '🍕', '🚗', '⛺', '🎿', '🎄', '💑', '🛒', '💼'];
+const GROUP_ICONS = [['✈️', 'Reise'], ['🏖️', 'Strand'], ['🏠', 'Zuhause'], ['🎉', 'Feier'], ['🍕', 'Essen'], ['🚗', 'Auto'], ['⛺', 'Camping'], ['🎿', 'Ski'], ['🎄', 'Weihnachten'], ['💑', 'Paar'], ['🛒', 'Einkauf'], ['💼', 'Arbeit']];
 const groupIcon = g => g.icon || (isRecurring(g) ? '🏠' : '✈️');
 
 /* ---------- Rückmeldungen ---------- */
-let toastTimer;
+// Toasts mit Aktion bleiben 10 s stehen, pausieren bei Hover/Fokus; Strg+Z löst „Rückgängig“ aus
+let toastTimer, toastUndo = null;
 function toast(msg, opt = {}) {
   const t = $('toast');
   t.className = opt.error ? 'error' : '';
-  t.innerHTML = `<span>${esc(msg)}</span>${opt.action ? `<button type="button">${esc(opt.action)}</button>` : ''}`;
-  if (opt.action) t.querySelector('button').onclick = () => { t.hidden = true; opt.onAction(); };
+  const mac = /Mac|iP/.test(navigator.platform);
+  t.innerHTML = `<span>${esc(msg)}</span>${opt.action ? `<button type="button" aria-keyshortcuts="${mac ? 'Meta+Z' : 'Control+Z'}" title="${mac ? '⌘' : 'Strg'}+Z">${esc(opt.action)}</button>` : ''}`;
+  toastUndo = opt.action ? () => { hideToast(); opt.onAction(); } : null;
+  if (opt.action) t.querySelector('button').onclick = toastUndo;
   t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.hidden = true, opt.action ? 7000 : 4000);
+  armToast(opt.action ? 10000 : 4000);
 }
+function armToast(ms) { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, ms); }
+function hideToast() { $('toast').hidden = true; toastUndo = null; }
+$('toast').addEventListener('pointerenter', () => clearTimeout(toastTimer));
+$('toast').addEventListener('focusin', () => clearTimeout(toastTimer));
+$('toast').addEventListener('pointerleave', () => armToast(4000));
+$('toast').addEventListener('focusout', () => armToast(4000));
+addEventListener('keydown', e => {
+  if (toastUndo && e.key.toLowerCase() === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) {
+    e.preventDefault(); toastUndo();
+  }
+});
+// Offline-Hinweis: Änderungen werden lokal gespeichert und später übertragen
+function updateOnline() {
+  const o = $('offline');
+  o.hidden = navigator.onLine;
+  o.innerHTML = `${ic('wifi')} Offline: Änderungen werden gespeichert und übertragen, sobald du wieder online bist.`;
+}
+addEventListener('online', updateOnline); addEventListener('offline', updateOnline);
 const ERRORS = {
   'permission-denied': 'Dazu fehlt dir die Berechtigung. Bist du noch Mitglied der Gruppe?',
   'unavailable': 'Keine Verbindung. Deine Änderung wird übertragen, sobald du wieder online bist.',
@@ -102,7 +124,8 @@ function invalid(id, msg) {
   el.setAttribute('aria-describedby', id + '-err');
   const anchor = el.closest('.amount-wrap, .participants, .chips, .seg') || el;
   anchor.insertAdjacentHTML('afterend', `<div class="field-error" id="${id}-err">${ic('alert')}${esc(msg)}</div>`);
-  el.focus();
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 
 function show(screen) {
@@ -244,6 +267,7 @@ async function completeEmailLink(email) {
 
 function startApp() {
   show('App');
+  updateOnline();
   renderUser();
   unsubGroups?.();
   const q = fs.query(fs.collection(db, 'groups'), fs.where('memberUids', 'array-contains', S.user.uid));
@@ -315,7 +339,7 @@ function subscribeExpenses(attempt = 0) {
 const groupRef = id => fs.doc(db, 'groups', id);
 const expCol = gid => fs.collection(db, 'groups', gid, 'expenses');
 const activeGroup = () => S.groups.find(g => g.id === S.activeGroupId) || null;
-const memberName = (g, id) => id === POT ? '🏦 Kasse' : (g.members.find(m => m.id === id) || { name: '?' }).name;
+const memberName = (g, id) => id === POT ? 'Kasse' : (g.members.find(m => m.id === id) || { name: '?' }).name;
 const myMember = g => g.members.find(m => m.uid === S.user.uid) || null;
 const isRecurring = g => g.kind === 'recurring';
 const firstName = () => S.user.displayName?.split(' ')[0] || (S.user.email || '').split('@')[0].split(/[._-]/)[0].replace(/^./, c => c.toUpperCase());
@@ -346,6 +370,7 @@ function selectGroup(id, pending = false) {
   scrollTo(0, 0);
 }
 function go(tab, extra = {}) {
+  if (tab === 'add' && S.tab !== 'add') S.prevTab = S.tab;
   Object.assign(S, { tab, view: null }, extra);
   if (tab !== 'add') S.editingId = null;
   render(); syncRoute(true);
@@ -612,7 +637,8 @@ const actions = {
   newGroup: () => { S.view = 'newGroup'; S.editingId = null; closeDialog(); render(); syncRoute(true); scrollTo(0, 0); $('gName')?.focus(); },
   cancelNewGroup: () => { S.view = null; render(); syncRoute(true); },
   createGroup, saveSettings, deleteOrLeaveGroup, migrate, copyInvite, shareInvite, renewInvite, addMember,
-  logout: async () => { if (await ask({ title: 'Abmelden?', text: 'Deine Gruppen bleiben gespeichert. Du kannst dich jederzeit wieder anmelden.', ok: 'Abmelden' })) authM.signOut(auth); },
+  logout: () => { closeDialog(); authM.signOut(auth); },
+  openAccount: () => openAccount(),
   selectGroup: d => selectGroup(d.id),
   openGroupSheet: () => openGroupSheet(),
   closeDialog,
@@ -621,7 +647,7 @@ const actions = {
   thisPeriod: () => { const g = activeGroup(); delete S.cursor[g.id]; render(); },
   claim: d => claimMember(d.id || null),
   removeMember: d => removeMember(d.id),
-  submitEntry, cancelEdit: () => { S.editingId = null; go('expenses'); },
+  submitEntry, cancelEdit: () => { const wasEditing = S.editingId; S.editingId = null; go(wasEditing ? 'expenses' : S.prevTab || 'overview'); },
   settleDebt: d => settleDebt(d.from, d.to, Number(d.cents)),
   editExpense: d => { const e = S.expenses.find(x => x.id === d.id); S.entryType = e?.type === 'settlement' || e?.type === 'contribution' ? e.type : 'expense'; go('add', { editingId: d.id }); },
   deleteExpense: d => deleteExpense(d.id),
@@ -632,7 +658,11 @@ const actions = {
   updateSplitHint: () => updateSplitHint(),
   toggleAll: () => { const cbs = [...document.querySelectorAll('.p-check')]; const all = cbs.every(c => c.checked); cbs.forEach(c => c.checked = !all); renderParticipants(); },
   catPick: () => { const c = cat(document.querySelector('input[name=expCat]:checked')?.value); $('expDesc').placeholder = `z. B. ${c.example} (sonst „${c.name}“)`; },
-  settleFrom: () => prefillSettlement(),
+  settleFrom: () => prefillSettlement(false),
+  dateQuick: d => {
+    if (d.value === 'other') { $('expDate').hidden = false; $('expDate').focus(); try { $('expDate').showPicker(); } catch {} }
+    else { $('expDate').value = d.value === 'today' ? C.today() : yesterday(); $('expDate').hidden = true; }
+  },
 };
 document.addEventListener('submit', e => {
   const a = e.target.dataset?.submit;
@@ -673,6 +703,15 @@ document.addEventListener('pointermove', e => {
   tip.style.left = x + 'px'; tip.style.top = (e.clientY + 14) + 'px';
 });
 document.addEventListener('scroll', () => tip.hidden = true, true);
+// Tastatur: Tooltip auch bei Fokus zeigen
+document.addEventListener('focusin', e => {
+  const t = e.target.closest?.('[data-tip]');
+  if (!t) { tip.hidden = true; return; }
+  const r = t.getBoundingClientRect();
+  tip.textContent = t.dataset.tip; tip.hidden = false;
+  tip.style.left = Math.max(8, Math.min(r.left, innerWidth - tip.offsetWidth - 8)) + 'px';
+  tip.style.top = (r.top - tip.offsetHeight - 8 > 60 ? r.top - tip.offsetHeight - 8 : r.bottom + 8) + 'px';
+});
 
 /* ---------- Rendering ---------- */
 function render() { renderSidebar(); renderMain(); syncRoute(false); }
@@ -687,9 +726,18 @@ function softRender() {
 function renderUser() {
   const u = S.user;
   const initial = (firstName() || '?')[0].toUpperCase();
-  $('userBox').innerHTML = `${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : `<span class="avatar" aria-hidden="true">${esc(initial)}</span>`}
-    <span class="uname">${esc(u.displayName || u.email || '')}</span>
-    <button class="hdr-btn" data-action="logout" aria-label="Abmelden">${ic('logout')}<span class="lbl">Abmelden</span></button>`;
+  $('userBox').innerHTML = `<button class="acct-btn" data-action="openAccount" aria-haspopup="dialog" aria-label="Konto: ${esc(u.displayName || u.email || '')}">
+    ${u.photoURL ? `<img src="${esc(u.photoURL)}" alt="" referrerpolicy="no-referrer">` : `<span class="avatar" aria-hidden="true">${esc(initial)}</span>`}
+    <span class="uname">${esc(firstName())}</span>${ic('down')}</button>`;
+}
+function openAccount() {
+  const u = S.user, d = $('dlg');
+  d.className = 'sheet';
+  d.innerHTML = `<div class="dlg-body"><div class="card-h"><h2 id="dlgTitle">Dein Konto</h2>
+      <button class="icon-btn" data-action="closeDialog" aria-label="Schließen">${ic('x')}</button></div>
+    <p><b>${esc(u.displayName || firstName())}</b><br>${esc(u.email || '')}</p>
+    <button class="btn secondary block" style="margin-top:16px" data-action="logout">${ic('logout')} Abmelden</button></div>`;
+  d.showModal();
 }
 
 const groupSub = g => `${g.members.length} ${g.members.length === 1 ? 'Person' : 'Personen'}${isRecurring(g) ? ` · ${g.period === 'week' ? 'wöchentlich' : 'monatlich'}` : ''}${g.potEnabled ? ' · mit Kasse' : ''}`;
@@ -726,7 +774,7 @@ function openGroupSheet() {
 
 const NAV = [
   ['overview', 'Übersicht', 'home'],
-  ['expenses', 'Verlauf', 'list'],
+  ['expenses', 'Einträge', 'list'],
   ['balances', 'Ausgleich', 'scale'],
   ['group', 'Gruppe', 'users'],
 ];
@@ -734,7 +782,7 @@ const NAV = [
 function renderMain() {
   const el = $('mainArea');
   const nav = $('bottomNav');
-  nav.hidden = true; $('layout').classList.remove('has-nav');
+  nav.hidden = true; $('layout').classList.remove('has-nav', 'form-mode');
   if (S.view === 'newGroup') { el.innerHTML = renderGroupForm(null); return; }
   const g = activeGroup();
   if (!g) { el.innerHTML = renderWelcome(); return; }
@@ -746,7 +794,7 @@ function renderMain() {
       <div><h1>${esc(g.name)}</h1><div class="meta">${groupMeta(g)}</div></div></div>`;
   html += `<div class="tabbar"><div class="tabs" role="tablist" aria-label="Bereiche">${NAV.map(([k, label]) =>
     `<button class="tab" role="tab" id="tab-${k}" aria-controls="panel" aria-selected="${S.tab === k}" tabindex="${S.tab === k ? 0 : -1}" data-action="tab" data-tab="${k}">${label}</button>`).join('')}</div>
-    <button class="btn small" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button></div>`;
+    <button class="btn small ${g.members.length < 2 && !g.potEnabled ? 'secondary' : ''}" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button></div>`;
 
   let body;
   if (S.tab === 'group') body = renderGroupTab(g);
@@ -754,8 +802,8 @@ function renderMain() {
   else if (S.tab === 'add') body = renderForm(g);
   else if (S.tab === 'balances') body = renderBalances(g);
   else if (S.tab === 'expenses') body = periodNav(g) + renderExpenses(g, vis);
-  else body = periodNav(g) + renderOverview(g, vis);
-  html += `<div id="panel" role="tabpanel" aria-labelledby="tab-${S.tab === 'add' ? 'overview' : S.tab}">${body}</div>`;
+  else body = renderOverview(g, vis);
+  html += `<div id="panel" role="tabpanel" ${S.tab === 'add' ? 'aria-label="Eintrag erfassen"' : `aria-labelledby="tab-${S.tab}"`}>${body}</div>`;
 
   const focusId = document.activeElement?.id;
   el.innerHTML = html;
@@ -763,6 +811,8 @@ function renderMain() {
   if (focusId && el.querySelector('#' + CSS.escape(focusId))) $(focusId).focus();
   if (S.flashId) { el.querySelector(`[data-id="${CSS.escape(S.flashId)}"]`)?.classList.add('flash'); S.flashId = null; }
 
+  // Im Formular auf Mobile: Vollbild-Formular mit fester Speicherleiste statt Navigation
+  if (S.tab === 'add' && $('entryForm')) { $('layout').classList.add('form-mode'); return; }
   nav.hidden = false; $('layout').classList.add('has-nav');
   const cur = editing ? 'add' : S.tab;
   const btn = ([k, label, icon]) => `<button data-action="tab" data-tab="${k}" ${cur === k ? 'aria-current="page"' : ''}>${ic(icon)}<span>${label}</span></button>`;
@@ -778,7 +828,7 @@ function groupMeta(g) {
     parts.push(g.endDate ? `${f(g.startDate, { day: 'numeric', month: 'short' })} – ${f(g.endDate, { day: 'numeric', month: 'short', year: 'numeric' })}` : `ab ${f(g.startDate, { day: 'numeric', month: 'short' })}`);
   }
   if (isRecurring(g)) parts.push(g.period === 'week' ? 'Wochenansicht' : 'Monatsansicht');
-  return parts.join(' · ') + (usesPot(g) ? ` <span class="badge pot">🏦 Kasse ${fmt(C.potCash(S.expenses))}</span>` : '');
+  return parts.join(' · ') + (usesPot(g) ? ` <span class="badge pot">${ic('bank')} Kasse ${fmt(C.potCash(S.expenses))}</span>` : '');
 }
 
 function periodNav(g) {
@@ -827,7 +877,7 @@ function renderGroupForm(g) {
     <h2>${g ? 'Einstellungen' : 'Neue Gruppe'}</h2>
     <div class="field"><label for="gName">Name</label><input type="text" id="gName" maxlength="80" placeholder="z. B. Italien-Urlaub, WG, Haushalt" value="${esc(g?.name || '')}"></div>
     <div class="field"><span class="label" id="gIconL">Symbol</span>
-      <div class="chips" role="radiogroup" aria-labelledby="gIconL">${GROUP_ICONS.map(i => `<label class="chip emoji"><input type="radio" name="gIcon" value="${i}" ${i === icon ? 'checked' : ''} aria-label="${i}">${i}</label>`).join('')}</div></div>
+      <div class="chips" role="radiogroup" aria-labelledby="gIconL">${GROUP_ICONS.map(([i, n]) => `<label class="chip emoji" title="${n}"><input type="radio" name="gIcon" value="${i}" ${i === icon ? 'checked' : ''} aria-label="${n}"><span aria-hidden="true">${i}</span></label>`).join('')}</div></div>
     <div class="field"><span class="label" id="gKindL">Art der Gruppe</span>
       <div class="seg" role="radiogroup" aria-labelledby="gKindL">
         <label><input type="radio" name="gKind" value="event" data-change="groupKind" ${kind === 'event' ? 'checked' : ''}>Einmalig<small>z. B. Urlaub, Feier</small></label>
@@ -840,7 +890,7 @@ function renderGroupForm(g) {
     <div class="field" id="gRecurringFields" ${kind === 'recurring' ? '' : 'hidden'}><label for="gPeriod">Ansicht und Auswertung pro</label>
       <select id="gPeriod" data-change="groupKind"><option value="month" ${g?.period !== 'week' ? 'selected' : ''}>Monat</option><option value="week" ${g?.period === 'week' ? 'selected' : ''}>Woche</option></select></div>
     <label class="switch-row"><input type="checkbox" id="gPot" data-change="togglePot" ${pot ? 'checked' : ''}>
-      <span><b>🏦 Gemeinsame Kasse</b><small>Ein gemeinsamer Topf: Alle zahlen ein, bezahlt wird daraus. Wer einzahlt, hat dort ein Guthaben.</small></span></label>
+      <span><b>Gemeinsame Kasse</b><small>Ein gemeinsamer Topf: Alle zahlen ein, bezahlt wird daraus. Wer einzahlt, hat dort ein Guthaben.</small></span></label>
     <div class="field" id="gTargetField" ${pot ? '' : 'hidden'}><label for="gTarget" id="gTargetL">${targetLabel(kind, g?.period)}</label>
       <input type="text" id="gTarget" inputmode="decimal" placeholder="z. B. 300 (optional)" value="${g?.potTargetCents ? C.centsToInput(g.potTargetCents) : ''}">
       <p class="hint">Dient nur als Orientierung in der Übersicht.</p></div>
@@ -862,9 +912,9 @@ function addMemberForm(g, autofocus) {
       <input type="text" id="newMemberName" maxlength="40" placeholder="Name, z. B. Lena" ${autofocus ? 'autofocus' : ''}></div>
       <button class="btn fixed">${ic('plus')} Hinzufügen</button></form>`;
 }
-function inviteBox(g) {
+function inviteBox(g, secondary) {
   return `<div class="invite"><label for="inviteInput" class="sr-only">Einladungslink</label><input type="text" id="inviteInput" readonly value="${esc(inviteLink(g))}">
-      <button type="button" class="btn" data-action="shareInvite">${ic('share')} Link teilen</button>
+      <button type="button" class="btn ${secondary ? 'secondary' : ''}" data-action="shareInvite">${ic('share')} Link teilen</button>
       <button type="button" class="btn secondary" data-action="copyInvite">${ic('copy')} Kopieren</button></div>`;
 }
 
@@ -912,18 +962,19 @@ function renderExpenses(g, vis) {
   for (const e of [...vis].reverse()) {
     if (e.date !== lastDay) { html += `<h3 class="day-h">${esc(dayLabel(e.date))}</h3>`; lastDay = e.date; }
     let icon, title, sub, mine = '';
+    const who = id => id === me ? 'Du' : esc(memberName(g, id));
     if (e.type === 'settlement') {
-      icon = '💸'; title = 'Ausgleichszahlung';
-      sub = `${esc(memberName(g, e.payerId))} → ${esc(memberName(g, e.shares[0].memberId))}`;
+      icon = '💸'; title = 'Ausgleich';
+      sub = `${who(e.payerId)} → ${who(e.shares[0].memberId)}`;
     } else if (e.type === 'contribution') {
-      icon = '🏦'; title = 'Einzahlung in die Kasse';
-      sub = `von ${esc(memberName(g, e.payerId))}`;
+      icon = '🏦'; title = 'Einzahlung';
+      sub = `in die Kasse · von ${who(e.payerId)}`;
     } else {
       icon = cat(e.category).icon; title = esc(e.desc);
       const n = e.shares.length;
-      sub = `${e.payerId === POT ? 'aus der Kasse' : e.payerId === me ? 'Du hast bezahlt' : esc(memberName(g, e.payerId)) + ' hat bezahlt'} · für ${n === g.members.length ? 'alle' : n === 1 ? esc(memberName(g, e.shares[0].memberId)) : n + ' Personen'}`;
+      sub = `${e.payerId === POT ? 'Kasse' : who(e.payerId)} · für ${n === g.members.length ? 'alle' : n === 1 ? who(e.shares[0].memberId) : n}`;
       const share = e.shares.find(s => s.memberId === me)?.cents || 0;
-      mine = share ? `<small>dein Anteil ${fmt(share)}</small>` : '<small>nicht beteiligt</small>';
+      mine = share ? `<small>Anteil ${fmt(share)}</small>` : '<small>ohne dich</small>';
     }
     const plain = e.type === 'settlement' || e.type === 'contribution';
     html += `<button class="entry ${plain ? 'muted' : ''}" data-action="editExpense" data-id="${esc(e.id)}" aria-label="${esc((plain ? title : e.desc) + ', ' + fmt(e.amountCents))} – bearbeiten">
@@ -931,11 +982,11 @@ function renderExpenses(g, vis) {
       <span class="e-text"><span class="e-title">${title}</span><span class="e-sub">${sub}</span></span>
       <span class="e-amt"><b>${fmt(e.amountCents)}</b>${mine}</span></button>`;
   }
-  return `<div class="card">${html}<p class="note">Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p></div>`;
+  return `<div class="card"><p class="hint" style="margin:0 0 4px">Bezahlt von · geteilt durch. Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p>${html}</div>`;
 }
 
 function memberOptions(g, withPot, selected) {
-  return (withPot ? `<option value="${POT}" ${selected === POT ? 'selected' : ''}>🏦 Kasse</option>` : '') +
+  return (withPot ? `<option value="${POT}" ${selected === POT ? 'selected' : ''}>Gemeinsame Kasse</option>` : '') +
     g.members.map(m => `<option value="${esc(m.id)}" ${selected === m.id ? 'selected' : ''}>${esc(m.name)}${m.uid === S.user.uid ? ' (du)' : ''}</option>`).join('');
 }
 
@@ -945,14 +996,41 @@ function debtsOf(g) {
   const b = C.balances(g.members.map(m => m.id), personTx);
   return { b, debts: C.simplifyDebts(b), potTx };
 }
-function prefillSettlement() {
+// Ausgleich vorbelegen: größte offene Schuld, an der ich beteiligt bin (in beide Richtungen)
+function prefillSettlement(initial) {
   const g = activeGroup(); if (!g || !$('setFrom')) return;
+  const me = myMember(g)?.id;
+  const debts = debtsOf(g).debts.sort((a, b) => b.cents - a.cents);
+  let d;
+  if (initial) {
+    d = debts.find(x => x.from === me || x.to === me) || debts[0];
+    if (d) $('setFrom').value = d.from;
+  } else d = debts.find(x => x.from === $('setFrom').value);
   const from = $('setFrom').value;
-  const d = debtsOf(g).debts.filter(x => x.from === from).sort((a, b) => b.cents - a.cents)[0];
-  if (d) { $('setTo').value = d.to; if (!$('expAmount').value || $('expAmount').dataset.auto) { $('expAmount').value = C.centsToInput(d.cents); $('expAmount').dataset.auto = '1'; } }
-  else if ($('setTo').value === from) $('setTo').value = g.members.find(m => m.id !== from)?.id || POT;
-  const open = d ? `${memberName(g, from)} schuldet ${memberName(g, d.to)} noch ${fmt(d.cents)}.` : `${memberName(g, from)} hat keine offenen Schulden.`;
-  $('setHint').textContent = open;
+  if (d) {
+    $('setTo').value = d.to;
+    if (!$('expAmount').value || $('expAmount').dataset.auto) { $('expAmount').value = C.centsToInput(d.cents); $('expAmount').dataset.auto = '1'; }
+  } else if ($('setTo').value === from) $('setTo').value = g.members.find(m => m.id !== from)?.id || POT;
+  const nom = id => id === me ? 'Du' : memberName(g, id);
+  const dat = id => id === me ? 'dir' : memberName(g, id);
+  $('setHint').textContent = d ? `Offen: ${nom(d.from)} ${d.from === me ? 'schuldest' : 'schuldet'} ${dat(d.to)} noch ${fmt(d.cents)}. Betrag ist vorausgefüllt.`
+    : `${from === me ? 'Du hast' : nom(from) + ' hat'} keine offenen Schulden.`;
+}
+
+function dateField() {
+  return `<div class="field"><span class="label" id="dateL">Datum</span>
+    <div class="chips" role="radiogroup" aria-labelledby="dateL">
+      <label class="chip"><input type="radio" name="dQ" value="today" data-change="dateQuick">Heute</label>
+      <label class="chip"><input type="radio" name="dQ" value="yesterday" data-change="dateQuick">Gestern</label>
+      <label class="chip"><input type="radio" name="dQ" value="other" data-change="dateQuick">Anderes Datum</label></div>
+    <input type="date" id="expDate" class="date-other" aria-labelledby="dateL" hidden></div>`;
+}
+const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return C.isoDate(d); };
+function setDate(v) {
+  $('expDate').value = v;
+  const q = v === C.today() ? 'today' : v === yesterday() ? 'yesterday' : 'other';
+  document.querySelector(`input[name=dQ][value=${q}]`).checked = true;
+  $('expDate').hidden = q !== 'other';
 }
 
 function renderForm(g) {
@@ -968,7 +1046,7 @@ function renderForm(g) {
   const me = myMember(g)?.id;
 
   let html = `<form class="card" id="entryForm" data-submit="submitEntry" novalidate>
-    <div class="card-h"><h2>${titles[type]}</h2>${editing ? `<button type="button" class="icon-btn" data-action="cancelEdit" aria-label="Schließen">${ic('x')}</button>` : ''}</div>
+    <div class="card-h"><h2 id="formTitle">${titles[type]}</h2><button type="button" class="icon-btn" data-action="cancelEdit" aria-label="Schließen, ohne zu speichern">${ic('x')}</button></div>
     ${!editing && types.length > 1 ? `<div class="field"><div class="seg" role="radiogroup" aria-label="Art des Eintrags">${types.map(([k, l]) =>
       `<label><input type="radio" name="eType" value="${k}" data-change="entryType" ${k === type ? 'checked' : ''}>${l}</label>`).join('')}</div></div>` : ''}
     <div class="field"><label for="expAmount">Betrag</label>
@@ -980,11 +1058,9 @@ function renderForm(g) {
     <div class="field"><span class="label" id="catL">Kategorie</span>
       <div class="chips" role="radiogroup" aria-labelledby="catL">${CATEGORIES.map((c, i) =>
         `<label class="chip"><input type="radio" name="expCat" value="${c.id}" data-change="catPick" ${i === 0 ? 'checked' : ''}><span aria-hidden="true">${c.icon}</span>${c.name}</label>`).join('')}</div></div>
-    <div class="row">
-      <div class="field"><label for="expPayer">Bezahlt von</label>
-        <select id="expPayer">${memberOptions(g, pot, me)}</select></div>
-      <div class="field"><label for="expDate">Datum</label><input type="date" id="expDate"></div>
-    </div>
+    <div class="field"><label for="expPayer">Bezahlt von</label>
+      <select id="expPayer">${memberOptions(g, pot, me)}</select></div>
+    ${dateField()}
     <div class="field"><span class="label" id="modeL">Aufteilen</span>
       <div class="seg" role="radiogroup" aria-labelledby="modeL">
         <label><input type="radio" name="expMode" value="equal" data-change="renderParticipants" checked>Gleich</label>
@@ -997,19 +1073,19 @@ function renderForm(g) {
       <div class="split-hint" id="splitHint" aria-live="polite"></div></div>`;
   } else if (type === 'contribution') {
     html += `<div class="row">
-      <div class="field"><label for="conFrom">Wer zahlt ein?</label><select id="conFrom">${memberOptions(g, false, me)}</select></div>
-      <div class="field"><label for="expDate">Datum</label><input type="date" id="expDate"></div></div>
+      <div class="field"><label for="conFrom">Wer zahlt ein?</label><select id="conFrom">${memberOptions(g, false, me)}</select></div></div>
+      ${dateField()}
       ${g.potTargetCents ? `<p class="hint" style="margin:-6px 0 12px">Sollbeitrag: ${fmt(g.potTargetCents)} pro Person.</p>` : ''}`;
   } else {
     html += `<div class="row">
       <div class="field"><label for="setFrom">Wer hat gezahlt?</label><select id="setFrom" data-change="settleFrom">${memberOptions(g, pot, me)}</select></div>
       <div class="field"><label for="setTo">An wen?</label><select id="setTo">${memberOptions(g, pot)}</select></div></div>
       <p class="hint" id="setHint" style="margin:-6px 0 12px"></p>
-      <div class="field"><label for="expDate">Datum</label><input type="date" id="expDate"></div>`;
+      ${dateField()}`;
   }
   html += `<div class="form-actions sticky-actions">
       <button class="btn lg">${ic('check')} ${editing ? 'Änderungen speichern' : 'Speichern'}</button>
-      ${editing ? `<button type="button" class="btn secondary lg" data-action="cancelEdit">Abbrechen</button><span class="spacer"></span>
+      <button type="button" class="btn secondary lg" data-action="cancelEdit">Abbrechen</button>${editing ? `<span class="spacer"></span>
         <button type="button" class="icon-btn danger" data-action="deleteExpense" data-id="${esc(editing.id)}" aria-label="Eintrag löschen">${ic('trash')}</button>` : ''}
     </div></form>`;
   return html;
@@ -1017,7 +1093,7 @@ function renderForm(g) {
 
 function initForm(g) {
   const editing = S.editingId ? S.expenses.find(e => e.id === S.editingId) : null;
-  $('expDate').value = editing ? editing.date : defaultDate(g);
+  setDate(editing ? editing.date : defaultDate(g));
   if (editing) $('expAmount').value = C.centsToInput(editing.amountCents);
   const type = S.entryType;
   if (type === 'expense') {
@@ -1034,7 +1110,7 @@ function initForm(g) {
     else if (g.potTargetCents) $('expAmount').value = C.centsToInput(g.potTargetCents);
   } else {
     if (editing) { $('setFrom').value = editing.payerId; $('setTo').value = editing.shares[0].memberId; }
-    prefillSettlement();
+    prefillSettlement(!editing);
     if (editing) { $('setTo').value = editing.shares[0].memberId; $('expAmount').value = C.centsToInput(editing.amountCents); delete $('expAmount').dataset.auto; }
   }
 }
@@ -1111,7 +1187,7 @@ function renderBalances(g) {
   let potHtml = '';
   if (pot) {
     const stake = C.balances(ids, potTx);
-    potHtml = `<div class="card"><div class="card-h"><h2>🏦 Kasse</h2><span class="badge pot">Stand ${fmt(C.potCash(S.expenses))}</span></div>
+    potHtml = `<div class="card"><div class="card-h"><h2>Kasse</h2><span class="badge pot">Stand ${fmt(C.potCash(S.expenses))}</span></div>
       <p class="hint" style="margin:-6px 0 8px">Guthaben jeder Person in der Kasse: eingezahlt minus eigener Anteil an den Ausgaben aus der Kasse.</p>
       ${g.members.map(m => {
         const v = stake[m.id];
@@ -1128,7 +1204,7 @@ function renderBalances(g) {
       <span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}">${v > 0 ? 'bekommt ' + fmt(v) : v < 0 ? 'schuldet ' + fmt(-v) : 'ausgeglichen'}</span></div>`;
   }).join('');
   return `<div class="card"><div class="card-h"><h2>So gleicht ihr aus</h2>
-      <button type="button" class="btn ghost small" data-action="tab" data-tab="add" data-type="settlement">${ic('plus')} Andere Zahlung</button></div>
+      <button type="button" class="btn ghost small" data-action="tab" data-tab="add" data-type="settlement">${ic('plus')} Zahlung manuell erfassen</button></div>
       ${debtHtml}
       ${debts.length ? `<p class="note">Die wenigsten Überweisungen, mit denen alle quitt sind. Tippe auf „Bezahlt“, sobald das Geld überwiesen ist.${pot ? ' Die Kasse wird getrennt verrechnet.' : ''}${isRecurring(g) ? ' Gilt über alle Zeiträume.' : ''}</p>` : ''}</div>
     ${potHtml}
@@ -1139,7 +1215,7 @@ function renderBalances(g) {
 function renderOverview(g, vis) {
   const st = C.spendingStats(vis);
   const me = myMember(g);
-  let html = renderChecklist(g) + renderStanding(g, me);
+  let html = renderChecklist(g) + renderStanding(g, me) + periodNav(g);
   const kpis = [];
   kpis.push(kpi(isRecurring(g) ? `Ausgaben ${g.period === 'week' ? 'diese Woche' : 'im Monat'}` : 'Ausgaben gesamt', fmt(st.total), `${st.count} ${st.count === 1 ? 'Ausgabe' : 'Ausgaben'}`));
   if (isRecurring(g)) {
@@ -1154,8 +1230,9 @@ function renderOverview(g, vis) {
     kpis.push(kpi('Pro Tag', days ? fmt(Math.round(st.total / days)) : '–', days ? `über ${days} Tag${days > 1 ? 'e' : ''}` : 'noch keine Daten'));
   }
   if (me) kpis.push(kpi('Deine Kosten', fmt(st.share[me.id] || 0), `dein Anteil · bezahlt ${fmt(st.paid[me.id] || 0)}`));
-  if (usesPot(g)) kpis.push(kpi('🏦 Kasse', fmt(C.potCash(S.expenses)), 'aktueller Stand'));
+  if (usesPot(g)) kpis.push(kpi('Kasse', fmt(C.potCash(S.expenses)), 'aktueller Stand'));
 
+  if (g.members.length < 2 && !g.potEnabled) return html;
   if (st.count === 0 && !g.potEnabled) return html + `<div class="card empty-state"><div class="big" aria-hidden="true">📊</div>
     <h2>Hier entstehen eure Auswertungen</h2><p>Sobald Ausgaben${isRecurring(g) ? ' in diesem Zeitraum' : ''} eingetragen sind, siehst du hier, wer was bezahlt hat und wofür.</p>
     <button class="btn" data-action="tab" data-tab="add" data-type="expense">${ic('plus')} Ausgabe hinzufügen</button></div>`;
@@ -1174,9 +1251,12 @@ function renderChecklist(g) {
     [S.expenses.some(C.isSpending), 'Erste Ausgabe eintragen', 'add', 'Eintragen'],
   ];
   if (steps.every(s => s[0]) || (steps[0][0] && steps[2][0])) return '';
+  const solo = !steps[0][0];
   return `<div class="card"><h2>Los geht's: richte „${esc(g.name)}“ ein</h2><ol class="steps">${steps.map(([done, text, tab, cta], i) =>
     `<li class="${done ? 'done' : ''}"><span class="num">${done ? ic('check') : i + 1}</span><span class="s-text">${text}</span>
-      ${done ? '<span class="sr-only">erledigt</span>' : `<button class="btn small ${i === steps.findIndex(s => !s[0]) ? '' : 'secondary'}" data-action="tab" data-tab="${tab}" data-type="expense">${cta}</button>`}</li>`).join('')}</ol></div>`;
+      ${done ? '<span class="sr-only">erledigt</span>' : solo && i < 2 ? '' : `<button class="btn small ${i === steps.findIndex(s => !s[0]) ? '' : 'secondary'}" data-action="tab" data-tab="${tab}" data-type="expense" ${solo ? 'disabled' : ''}>${cta}</button>`}</li>`).join('')}</ol>
+    ${solo ? `<h3>Wer ist noch dabei?</h3><p class="hint" style="margin-top:0">Ohne Konto, nur mit Namen. Du kannst die anderen auch später einladen.</p>${addMemberForm(g)}
+      <h3>Oder direkt einladen</h3>${inviteBox(g, true)}` : ''}</div>`;
 }
 
 // Persönlicher Stand: das Wichtigste zuerst
@@ -1194,20 +1274,20 @@ function renderStanding(g, me) {
       <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button></div>`;
   }).join('');
   return `<section class="card" aria-labelledby="standL"><div class="hero">
-      <div><div class="h-label" id="standL">Dein Stand${isRecurring(g) ? ' (alle Zeiträume)' : ''}</div><div class="h-value">${value}</div>
+      <div><div class="h-label" id="standL">Dein Stand${isRecurring(g) ? ' über alle Zeiträume' : ''}</div><div class="h-value">${value}</div>
       ${v === 0 ? '<div class="h-sub">Niemand schuldet dir etwas, und du schuldest niemandem etwas.</div>' : ''}</div>
-      <div class="actions"><button type="button" class="btn secondary" data-action="tab" data-tab="balances">Alle Salden</button></div>
-    </div>${rows ? `<div class="hero-debts">${rows}</div>` : ''}</section>`;
+    </div>${rows ? `<div class="hero-debts">${rows}</div>` : ''}
+    <div class="card-foot"><button type="button" class="btn ghost small" data-action="tab" data-tab="balances">Alle Salden ansehen ${ic('right')}</button></div></section>`;
 }
 const kpi = (label, value, sub) => `<div class="kpi"><div class="k-label">${label}</div><div class="k-value">${value}</div><div class="k-sub">${esc(sub)}</div></div>`;
 
 function personChart(g, st) {
   const rows = g.members.map(m => ({ name: m.name, paid: st.paid[m.id] || 0, share: st.share[m.id] || 0 }));
-  if (st.paid[POT]) rows.push({ name: '🏦 Kasse', paid: st.paid[POT], share: 0, pot: true });
+  if (st.paid[POT]) rows.push({ name: 'Kasse', paid: st.paid[POT], share: 0, pot: true });
   const max = Math.max(1, ...rows.flatMap(r => [r.paid, r.share]));
   const bar = (v, color, label) => `<div class="hbar-line" data-tip="${esc(label)}: ${fmt(v)}">
       <div class="hbar-track"><div class="hbar" style="width:${(v / max * 100).toFixed(1)}%;background:${color}"></div></div><span>${fmt(v)}</span></div>`;
-  return `<div class="card"><h2>Bezahlt vs. Anteil</h2>
+  return `<div class="card"><h2>Bezahlt und Anteil pro Person</h2>
     <div class="legend"><span><i style="background:var(--s1)"></i>bezahlt</span><span><i style="background:var(--s2)"></i>eigener Anteil</span></div>
     ${rows.map(r => `<div class="hbar-row"><span class="name" title="${esc(r.name)}">${esc(r.name)}</span><div class="hbar-pair">
       ${bar(r.paid, 'var(--s1)', `${r.name} hat bezahlt`)}${r.pot ? '' : bar(r.share, 'var(--s2)', `Anteil von ${r.name}`)}</div></div>`).join('')}
@@ -1227,10 +1307,10 @@ function categoryChart(st) {
     return s;
   }).join('');
   return `<div class="card"><h2>Nach Kategorie</h2><div class="donut-wrap">
-    <svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Ausgaben nach Kategorie">${segs}
+    <svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Ringdiagramm: Ausgaben nach Kategorie, gesamt ${fmt(st.total)}" aria-describedby="catLegend">${segs}
       <text class="d-label" x="80" y="76" text-anchor="middle" font-size="11">gesamt</text>
       <text class="d-value" x="80" y="94" text-anchor="middle" font-size="15" font-weight="700">${fmt(st.total)}</text></svg>
-    <div class="cat-legend">${items.map(c => `<div><span><i style="background:${c.color}"></i>${c.icon} ${esc(c.name)}</span>
+    <div class="cat-legend" id="catLegend">${items.map(c => `<div><span><i style="background:${c.color}"></i>${c.icon} ${esc(c.name)}</span>
       <span>${fmt(c.v)} · ${Math.round(c.v / st.total * 100)} %</span></div>`).join('')}</div>
   </div></div>`;
 }
@@ -1239,7 +1319,7 @@ function timeChart(g, vis) {
   let points, title, labelOf, tipOf, currentKey = null;
   if (isRecurring(g)) {
     points = C.periodSeries(S.expenses, g.period, cursor(g), 6);
-    title = `Verlauf (letzte 6 ${g.period === 'week' ? 'Wochen' : 'Monate'})`;
+    title = `Ausgaben der letzten 6 ${g.period === 'week' ? 'Wochen' : 'Monate'}`;
     labelOf = k => C.periodLabel(k, g.period, true);
     tipOf = k => C.periodLabel(k, g.period);
     currentKey = cursor(g);
@@ -1251,7 +1331,7 @@ function timeChart(g, vis) {
     const to = g.endDate && g.endDate > last ? g.endDate : last;
     const series = C.dailySeries(vis, from, to);
     points = series.points;
-    title = series.weekly ? 'Verlauf pro Woche' : 'Verlauf pro Tag';
+    title = series.weekly ? 'Ausgaben pro Woche' : 'Ausgaben pro Tag';
     const f = (k, o) => new Date(k + 'T00:00:00').toLocaleDateString('de-DE', o);
     labelOf = k => f(k, { day: 'numeric', month: 'numeric' });
     tipOf = k => series.weekly ? 'Woche ab ' + f(k, { day: 'numeric', month: 'long' }) : f(k, { weekday: 'short', day: 'numeric', month: 'long' });
@@ -1260,12 +1340,12 @@ function timeChart(g, vis) {
   const step = niceStep(max / 3);
   const top = Math.max(step, Math.ceil(max / step) * step);
   const grid = [1, 2, 3].map(i => i * step).filter(v => v <= top)
-    .map(v => `<div class="gl" style="bottom:${(v / top * 100).toFixed(1)}%"><span>${fmtShort(v)}</span></div>`).join('');
-  const every = Math.ceil(points.length / 10);
+    .map(v => `<div class="gl" aria-hidden="true" style="bottom:${(v / top * 100).toFixed(1)}%"><span>${fmtShort(v)}</span></div>`).join('');
+  const every = Math.ceil(points.length / (matchMedia('(max-width: 760px)').matches ? 5 : 10));
   return `<div class="card wide"><h2>${title}</h2>
-    <div class="cols">${grid}${points.map(p => `<div class="col ${p.key === currentKey ? 'current' : ''}" data-tip="${esc(tipOf(p.key))}\n${fmt(p.cents)}">
+    <div class="cols" role="list" aria-label="${esc(title)}">${grid}${points.map(p => `<div class="col ${p.key === currentKey ? 'current' : ''}" role="listitem" tabindex="0" aria-label="${esc(tipOf(p.key))}: ${fmt(p.cents)}" data-tip="${esc(tipOf(p.key))}\n${fmt(p.cents)}">
       ${p.cents ? `<div class="bar" style="height:${(p.cents / top * 100).toFixed(1)}%"></div>` : ''}</div>`).join('')}</div>
-    <div class="xlabels">${points.map((p, i) => `<span>${i % every === 0 ? esc(labelOf(p.key)) : ''}</span>`).join('')}</div>
+    <div class="xlabels" aria-hidden="true">${points.map((p, i) => `<span>${i % every === 0 ? esc(labelOf(p.key)) : ''}</span>`).join('')}</div>
   </div>`;
 }
 function niceStep(raw) {
@@ -1279,7 +1359,7 @@ function potChart(g, vis) {
   const target = g.potTargetCents || 0;
   const max = Math.max(1, target, ...Object.values(con));
   const scope = isRecurring(g) ? 'in diesem Zeitraum' : 'insgesamt';
-  return `<div class="card wide"><h2>🏦 Einzahlungen ${scope}</h2>
+  return `<div class="card wide"><h2>Einzahlungen in die Kasse ${scope}</h2>
     ${g.members.map(m => {
       const v = con[m.id] || 0;
       return `<div class="pot-row" data-tip="${esc(m.name)}: ${fmt(v)}${target ? ' von ' + fmt(target) : ''}">

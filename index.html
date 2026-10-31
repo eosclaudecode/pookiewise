@@ -39,7 +39,7 @@
     }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; scroll-padding-top: 76px; scroll-padding-bottom: 24px; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.45;
@@ -60,6 +60,10 @@
   header .brand { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 750; letter-spacing: .2px; }
   header .brand .logo { font-size: 22px; }
   header :focus-visible { outline-color: currentColor; }
+  header:has(#groupSwitch[hidden]) .brand .name { display: inline !important; }
+  .offline { position: sticky; top: 56px; z-index: 14; background: var(--pot-soft); color: var(--text); text-align: center; font-size: 14px; font-weight: 600; padding: 8px 12px; display: flex; gap: 8px; justify-content: center; align-items: center; }
+  .acct-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px 0 4px; border-radius: 999px; background: transparent; border: 0; color: inherit; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .acct-btn:hover { background: rgba(255,255,255,.14); }
   .group-switch {
     display: none; align-items: center; gap: 6px; min-width: 0; min-height: 44px; padding: 0 10px; margin-left: -4px;
     background: transparent; border: 0; color: inherit; font: inherit; font-weight: 700; font-size: 17px; cursor: pointer; border-radius: 10px;
@@ -102,7 +106,7 @@
   .hero-logo { font-size: 44px; margin-bottom: 8px; }
   .value-list { list-style: none; text-align: left; margin: 0 auto 22px; display: grid; gap: 10px; font-size: 15px; color: var(--text-2); }
   .value-list li { display: flex; gap: 10px; align-items: flex-start; }
-  .value-list li span:first-child { font-size: 18px; line-height: 1.3; }
+  .value-list li span:first-child { color: var(--brand-text); font-weight: 800; }
   .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 20px 0 14px; }
   .divider::before, .divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
   .email-row { text-align: left; }
@@ -190,6 +194,7 @@
   .chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
   .chip:has(input:checked) { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-text); font-weight: 700; }
   .chip:has(input:focus-visible) { outline: 3px solid var(--brand); outline-offset: 1px; }
+  .date-other { margin-top: 8px; }
   .chip.emoji { padding: 0; width: 44px; height: 44px; justify-content: center; font-size: 20px; }
   .participants { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
   .participant-row { display: flex; align-items: center; gap: 10px; padding: 0 12px; min-height: 52px; border-bottom: 1px solid var(--border); }
@@ -223,6 +228,7 @@
   .tabbar .btn { margin-bottom: 6px; }
   .badge { font-size: 12.5px; background: var(--brand-soft); color: var(--brand-text); padding: 3px 10px; border-radius: 999px; font-weight: 650; white-space: nowrap; }
   .badge.pot { background: var(--pot-soft); color: var(--pot); }
+  .badge svg.i { width: 14px; height: 14px; vertical-align: -2px; }
   .badge.muted { background: var(--surface-2); color: var(--text-2); }
   .period-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; }
   .period-nav .label { font-weight: 700; flex: 1; text-align: center; }
@@ -240,8 +246,8 @@
   .entry .e-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); font-size: 19px; flex-shrink: 0; }
   .entry .e-text { flex: 1; min-width: 0; }
   .entry .e-title, .entry .e-sub, .entry .e-amt small { display: block; }
-  .entry .e-title { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .entry .e-sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry .e-title { font-weight: 650; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .entry .e-sub { font-size: 13px; color: var(--muted); }
   .entry .e-amt { text-align: right; white-space: nowrap; }
   .entry .e-amt b { display: block; font-weight: 750; }
   .entry .e-amt small { font-size: 12.5px; color: var(--muted); }
@@ -262,7 +268,7 @@
   .empty { color: var(--muted); font-size: 15px; padding: 8px 0; }
   .empty-state { text-align: center; padding: 28px 12px; }
   .empty-state .big { font-size: 40px; margin-bottom: 8px; }
-  .empty-state h2 { margin-bottom: 6px; }
+  .empty-state h2 { margin-bottom: 6px; font-size: 22px; line-height: 1.25; }
   .empty-state p { color: var(--text-2); margin-bottom: 16px; }
   .note { font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 10px; }
   .banner { background: var(--brand-soft); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 14px; margin-bottom: 12px; line-height: 1.5; }
@@ -277,6 +283,7 @@
   .hero .h-value { font-size: 32px; font-weight: 800; line-height: 1.15; letter-spacing: -.3px; }
   .hero .h-sub { font-size: 14px; color: var(--muted); }
   .hero .actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .card-foot { display: flex; justify-content: flex-end; margin-top: 8px; }
   .hero-debts { margin-top: 14px; border-top: 1px solid var(--border); }
   .steps { list-style: none; counter-reset: s; display: grid; gap: 4px; }
   .steps li { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 4px 0; }
@@ -312,8 +319,9 @@
   .kpi .k-label { font-size: 13px; color: var(--muted); font-weight: 650; }
   .kpi .k-value { font-size: 22px; font-weight: 750; margin-top: 2px; }
   .kpi .k-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .charts .card { margin-bottom: 0; }
+  .charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .charts .card { margin-bottom: 0; min-width: 0; }
+  .cols .col:focus-visible { outline-offset: -2px; }
   .charts .wide { grid-column: 1 / -1; }
   .legend { display: flex; gap: 14px; font-size: 13px; color: var(--text-2); margin-bottom: 10px; flex-wrap: wrap; }
   .legend i, .cat-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
@@ -336,12 +344,12 @@
   .cols { position: relative; height: 170px; display: flex; align-items: flex-end; gap: 3px; padding-left: 56px; border-bottom: 1px solid var(--axis); }
   .cols .gl { position: absolute; left: 56px; right: 0; border-top: 1px solid var(--grid); }
   .cols .gl span { position: absolute; left: -56px; top: -8px; width: 50px; text-align: right; font-size: 11.5px; color: var(--tick); }
-  .cols .col { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; z-index: 1; }
+  .cols .col { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; z-index: 1; }
   .cols .col:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
   .cols .bar { width: 100%; max-width: 56px; background: color-mix(in srgb, var(--s1) 55%, var(--surface)); border-radius: 4px 4px 0 0; }
   .cols .col.current .bar { background: var(--s1); }
   .xlabels { display: flex; gap: 3px; padding-left: 56px; margin-top: 4px; }
-  .xlabels span { flex: 1; font-size: 11.5px; color: var(--tick); text-align: center; white-space: nowrap; overflow: hidden; }
+  .xlabels span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--tick); text-align: center; white-space: nowrap; overflow: hidden; }
   .progress { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; margin-top: 6px; }
   .progress div { height: 100%; background: var(--s3); border-radius: 0 4px 4px 0; }
   .pot-row { padding: 8px 0; font-size: 14px; }
@@ -369,7 +377,17 @@
     .row { flex-direction: column; gap: 0; }
     .row.end { align-items: stretch; }
     .row.keep { flex-direction: row; gap: 10px; }
-    .charts { grid-template-columns: 1fr; }
+    .charts { grid-template-columns: minmax(0, 1fr); }
+    .cat-legend { min-width: 0; flex-basis: 100%; }
+    .donut-wrap { justify-content: center; }
+    .entry .e-sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .layout.form-mode { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+    .form-mode .sticky-actions {
+      position: fixed; left: 0; right: 0; bottom: 0; margin: 0; border-radius: 0; z-index: 20;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 -4px 16px rgba(0,0,0,.08);
+    }
+    body:has(.form-mode) #toast { bottom: calc(88px + env(safe-area-inset-bottom)); }
+    html { scroll-padding-bottom: 110px; }
     .tabbar { display: none; }
     .group-head { margin-bottom: 12px; }
     .group-head .g-icon { display: none; }
@@ -377,7 +395,7 @@
     .hero .h-value { font-size: 28px; }
     .hero .actions { margin-left: 0; width: 100%; }
     .hero .actions .btn { flex: 1; }
-    .center-card { margin: 24px auto; padding: 24px 18px; }
+    .center-card { margin: 16px; padding: 24px 18px; }
     .kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
     .kpi .k-value { font-size: 19px; }
     .sticky-actions {
@@ -409,6 +427,7 @@
   <button class="group-switch" id="groupSwitch" data-action="openGroupSheet" aria-haspopup="dialog" hidden></button>
   <div class="user" id="userBox" hidden></div>
 </header>
+<div class="offline" id="offline" role="status" hidden></div>
 
 <section id="screenLoading"><div class="loading" role="status"><div class="spinner"></div><span>PookieWise wird geladen …</span></div></section>
 
@@ -425,9 +444,9 @@
     <h2 id="loginTitle">Gemeinsame Ausgaben, fair geteilt</h2>
     <p id="loginText">Für Urlaub, WG oder Haushalt: Tragt ein, wer was bezahlt hat. PookieWise rechnet aus, wer wem wie viel schuldet.</p>
     <ul class="value-list" id="loginValues">
-      <li><span aria-hidden="true">⚡</span><span>In Sekunden eintragen, auf allen Geräten sofort sichtbar</span></li>
-      <li><span aria-hidden="true">🤝</span><span>Mit möglichst wenigen Überweisungen ausgleichen</span></li>
-      <li><span aria-hidden="true">🏦</span><span>Optional mit gemeinsamer Kasse</span></li>
+      <li><span aria-hidden="true">✓</span><span>In Sekunden eintragen, auf allen Geräten sofort sichtbar</span></li>
+      <li><span aria-hidden="true">✓</span><span>Mit möglichst wenigen Überweisungen ausgleichen</span></li>
+      <li><span aria-hidden="true">✓</span><span>Optional mit gemeinsamer Kasse</span></li>
     </ul>
     <div id="loginOk" class="login-ok" role="status" hidden></div>
     <button class="btn google" data-action="login">
