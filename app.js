@@ -50,13 +50,15 @@ const ICONS = {
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
-  food: '<path d="M7 3v8M5 3v5a2 2 0 004 0V3M7 11v10M17 3c-2 1.5-3 4-3 7h3v11"/>',
-  cart: '<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.5 12h12L22 7H6"/>',
-  bed: '<path d="M3 18V6M3 14h18v4M21 14v-3a3 3 0 00-3-3h-8v6"/><circle cx="6.5" cy="10.5" r="1.5"/>',
-  car: '<path d="M5 16l1.5-6A2 2 0 018.4 8.5h7.2a2 2 0 011.9 1.5L19 16"/><rect x="3" y="13" width="18" height="5" rx="1.5"/><path d="M6.5 18v2M17.5 18v2"/>',
-  ticket: '<path d="M3 8a2 2 0 002-2h14a2 2 0 002 2v2a2 2 0 000 4v2a2 2 0 00-2 2H5a2 2 0 00-2-2v-2a2 2 0 000-4z"/><path d="M14 6v2M14 11v2M14 16v2"/>',
+  food: '<path d="M3 2v7a2 2 0 002 2h4a2 2 0 002-2V2M7 2v20M21 15V2a5 5 0 00-5 5v6a2 2 0 002 2h3zm0 0v7"/>',
+  cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2 2h2l2.7 12.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L22 7H5.1"/>',
+  bed: '<path d="M2 4v16M2 8h18a2 2 0 012 2v10M2 17h20M6 8v9"/>',
+  car: '<path d="M19 17h2a1 1 0 001-1v-3a2 2 0 00-1.5-1.9C18.7 10.6 16 10 16 10l-2.2-2.3A2.5 2.5 0 0012 7H5a1.6 1.6 0 00-1.4.9l-1.4 2.9A3.7 3.7 0 002 12v4a1 1 0 001 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
+  ticket: '<path d="M2 9a3 3 0 010 6v2a2 2 0 002 2h16a2 2 0 002-2v-2a3 3 0 010-6V7a2 2 0 00-2-2H4a2 2 0 00-2 2z"/><path d="M13 5v2M13 17v2M13 11v2"/>',
   box: '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  repeat: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 013-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 01-3 3H3"/>',
+  more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   bell: '<path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 21h4"/>',
   bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
   cloud: '<path d="M7 18a4.5 4.5 0 01-.6-9 6 6 0 0111.5 1.5A3.8 3.8 0 0117.5 18z"/><path d="M12 11v3l2 1"/>',
@@ -297,12 +299,14 @@ function startApp() {
   unsubGroups = fs.onSnapshot(q, snap => {
     S.groups = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'event' ? -1 : 1) || a.name.localeCompare(b.name, 'de'));
+    if (S.demo) S.groups.unshift(demoData().group);
     if (S.groups.some(g => g.id === S.pendingSelect)) S.pendingSelect = null;
     if (!S.groups.some(g => g.id === S.activeGroupId) && (!S.activeGroupId || S.activeGroupId !== S.pendingSelect)) {
       S.activeGroupId = S.groups[0]?.id || null;
     }
     subscribeExpenses();
     softRender();
+    refreshBalances();
   }, err => toast(errText(err, 'Das Laden der Gruppen'), { error: true }));
   processJoin();
   render();
@@ -342,6 +346,7 @@ async function processJoin() {
 function subscribeExpenses(attempt = 0) {
   if (S.expensesFor === S.activeGroupId && !attempt) return;
   unsubExp?.(); unsubExp = null;
+  if (S.activeGroupId === DEMO_ID && S.demo) { S.expenses = demoData().expenses; S.expensesFor = DEMO_ID; return; }
   if (!attempt) S.expenses = [];
   S.expensesFor = S.activeGroupId;
   if (!S.activeGroupId) return;
@@ -363,16 +368,33 @@ function subscribeExpenses(attempt = 0) {
 // Eigener Saldo je Gruppe, für die Gruppenliste (zuletzt gesehener Stand)
 let balCache = {};
 try { balCache = JSON.parse(lsGet('pw_bal')) || {}; } catch {}
-function cacheBalance() {
-  const g = activeGroup(), me = g && myMember(g);
-  if (!me || S.expensesFor !== g.id) return;
-  balCache[g.id] = debtsOf(g).b[me.id] || 0;
+const balFresh = {}; // in dieser Sitzung frisch berechnet
+const myBalance = (g, exps) => {
+  const me = myMember(g); if (!me) return null;
+  return C.balances(g.members.map(m => m.id), C.splitPot(exps).personTx)[me.id] || 0;
+};
+function storeBalance(gid, v) {
+  if (v == null) return;
+  balCache[gid] = v; balFresh[gid] = Date.now();
   lsSet('pw_bal', JSON.stringify(balCache));
+}
+function cacheBalance() {
+  const g = activeGroup();
+  if (g && !g.demo && S.expensesFor === g.id) storeBalance(g.id, myBalance(g, S.expenses));
+}
+// Salden der übrigen Gruppen einmalig nachladen (bei Bedarf erneut, z. B. beim Öffnen des Gruppen-Sheets)
+async function refreshBalances(maxAge = Infinity) {
+  const todo = S.groups.filter(g => g.id !== S.activeGroupId && !g.demo && !(Date.now() - (balFresh[g.id] || 0) < maxAge));
+  await Promise.all(todo.map(async g => {
+    try { const snap = await fs.getDocs(expCol(g.id)); storeBalance(g.id, myBalance(g, snap.docs.map(d => d.data()))); } catch {}
+  }));
+  if (todo.length) { renderSidebar(); if ($('dlg').open && $('dlg').classList.contains('sheet') && $('dlg').querySelector('.group-item')) openGroupSheet(true); }
 }
 const balTag = g => {
   const v = balCache[g.id];
   if (v == null) return '';
-  return `<span class="g-bal ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'}" aria-label="${v > 0 ? 'Du bekommst ' + fmt(v) : v < 0 ? 'Du schuldest ' + fmt(-v) : 'quitt'}">${v > 0 ? '+' + fmt(v) : v < 0 ? '−' + fmt(-v) : 'quitt'}</span> · `;
+  const stale = !balFresh[g.id];
+  return `<span class="g-bal ${v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero'} ${stale ? 'stale' : ''}" ${stale ? 'title="Stand beim letzten Öffnen, wird aktualisiert"' : ''} aria-label="${v > 0 ? 'Du bekommst ' + fmt(v) : v < 0 ? 'Du schuldest ' + fmt(-v) : 'quitt'}">${v > 0 ? '+' + fmt(v) : v < 0 ? '−' + fmt(-v) : 'quitt'}</span> · `;
 };
 const groupRef = id => fs.doc(db, 'groups', id);
 const expCol = gid => fs.collection(db, 'groups', gid, 'expenses');
@@ -513,11 +535,11 @@ function claimMember(memberId) {
   write(fs.updateDoc(groupRef(g.id), { members }));
 }
 
-function addMember() {
+function addMember(known) {
   const g = activeGroup(); if (!g) return;
   clearErrors($('mainArea'));
   const inp = $('newMemberName');
-  const name = inp.value.trim().slice(0, 40);
+  const name = (typeof known === 'string' ? known : inp.value).trim().slice(0, 40);
   if (!name) return invalid('newMemberName', 'Bitte einen Namen eingeben.');
   if (g.members.some(m => m.name.toLowerCase() === name.toLowerCase())) return invalid('newMemberName', `„${name}“ ist schon in der Gruppe.`);
   inp.value = '';
@@ -566,6 +588,7 @@ function shiftCursor(n) {
 function commitEntry(g, data, label) {
   const id = S.editingId || newExpenseId(g.id);
   const before = S.editingId ? S.expenses.find(e => e.id === id) : null;
+  if ('series' in data && !data.series) data.series = id; // Wiederholungsserie beginnt mit diesem Eintrag
   const firstEver = !before && !S.expenses.some(C.isSpending) && data.type !== 'settlement' && data.type !== 'contribution';
   saveExpense(g, id, data);
   if (isRecurring(g)) S.cursor[g.id] = C.periodKey(data.date, g.period);
@@ -583,7 +606,7 @@ function submitEntry() {
   const g = activeGroup(); if (!g) return;
   clearErrors($('mainArea'));
   const type = S.entryType;
-  const amount = parseAmount($('expAmount').value);
+  let amount = parseAmount($('expAmount').value);
   const date = $('expDate').value || C.today();
   if (!$('expAmount').value.trim()) return invalid('expAmount', 'Wie viel war es? Bitte einen Betrag eingeben.');
   if (isNaN(amount) || amount <= 0) return invalid('expAmount', 'Bitte einen Betrag wie 12,50 eingeben.');
@@ -600,6 +623,15 @@ function submitEntry() {
       `Ausgleich ${memberName(g, from)} → ${memberName(g, to)}`);
   }
 
+  const extra = {};
+  if (formCur() !== 'EUR') {
+    const rate = formRate();
+    if (!(rate > 0)) return invalid('expRate', `Bitte den Kurs eingeben: Wie viel Euro ist 1 ${formCur()}?`);
+    extra.fx = { cur: formCur(), amount, rate };
+    lsSet('pw_rate_' + formCur(), String(rate).replace('.', ','));
+    amount = Math.round(amount * rate);
+  } else extra.fx = null;
+  if ($('expRepeat')) extra.repeat = $('expRepeat').checked;
   const category = document.querySelector('input[name=expCat]:checked')?.value || 'other';
   const desc = ($('expDesc').value.trim() || cat(category).name).slice(0, 200);
   const payerId = $('expPayer').value;
@@ -631,7 +663,41 @@ function submitEntry() {
     shares = C.computeShareSplit(amount, entries);
   }
   const type2 = payerId === POT ? 'potExpense' : 'expense';
-  commitEntry(g, { type: type2, desc, amountCents: amount, payerId, date, mode, shares, category }, `„${desc}“ (${fmt(amount)})`);
+  const editing = S.editingId ? S.expenses.find(e => e.id === S.editingId) : null;
+  if (extra.repeat || editing?.series) extra.series = editing?.series || null;
+  commitEntry(g, { type: type2, desc, amountCents: amount, payerId, date, mode, shares, category, ...extra }, `„${desc}“ (${fmt(amount)})`);
+}
+
+// Aktionen je Schuldzeile: Hauptaktion sichtbar; Erinnern/Teilbetrag auf dem Desktop daneben, auf Mobile im ⋯-Menü
+function debtActions(g, d, me) {
+  const from = esc(memberName(g, d.from)), to = esc(memberName(g, d.to));
+  const mineIn = d.to === me, mineOut = d.from === me;
+  const label = mineOut ? `Bezahlt: ${fmt(d.cents)} an ${to}` : mineIn ? `Erhalten: ${fmt(d.cents)} von ${from}` : `Als bezahlt markieren: ${from} an ${to}, ${fmt(d.cents)}`;
+  const data = `data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}"`;
+  return `<span class="debt-actions">
+    <span class="desk-only">${mineIn ? `<button type="button" class="btn ghost small" data-action="remind" data-from="${esc(d.from)}" aria-label="${from} an ${fmt(d.cents)} erinnern">${ic('bell')} Erinnern</button>` : ''}<button type="button" class="btn ghost small" data-action="settleCustom" ${data} aria-label="Teilbetrag von ${from} an ${to} erfassen">Teilbetrag</button></span>
+    <button type="button" class="icon-btn mob-only" data-action="debtMenu" ${data} aria-haspopup="dialog" aria-label="Weitere Aktionen: ${from} an ${to}">${ic('more')}</button>
+    <button type="button" class="btn small ${mineIn ? 'secondary' : mineOut ? '' : 'secondary'}" data-action="settleDebt" ${data} aria-label="${label}">${ic('check')} ${mineIn ? 'Erhalten' : 'Bezahlt'}</button></span>`;
+}
+const remindKey = (g, from) => `pw_rem_${g.id}_${from}`;
+function remindedNote(g, d, me) {
+  const when = d.to === me && lsGet(remindKey(g, d.from));
+  return when ? `<span class="reminded">${ic('bell')} erinnert: ${esc(dayLabel(when).replace(/^Heute$/, 'heute').replace(/^Gestern$/, 'gestern'))}</span>` : '';
+}
+function debtMenu(dset) {
+  const g = activeGroup(); if (!g) return;
+  const me = myMember(g)?.id;
+  const from = esc(memberName(g, dset.from)), to = esc(memberName(g, dset.to));
+  const d = $('dlg');
+  d.className = 'sheet';
+  d.innerHTML = `<div class="dlg-body"><div class="card-h"><h2 id="dlgTitle">${from} an ${to}: ${fmt(Number(dset.cents))}</h2>
+      <button class="icon-btn" data-action="closeDialog" aria-label="Schließen">${ic('x')}</button></div>
+    <div class="menu">
+      ${dset.to === me ? `<button class="menu-item" data-action="remind" data-from="${esc(dset.from)}">${ic('bell')}<span><b>Erinnern</b><small>Nachricht an ${from} teilen</small></span></button>` : ''}
+      <button class="menu-item" data-action="settleCustom" data-from="${esc(dset.from)}" data-to="${esc(dset.to)}" data-cents="${esc(dset.cents)}">${ic('pencil')}<span><b>Teilbetrag erfassen</b><small>Wenn erst ein Teil überwiesen wurde</small></span></button>
+    </div></div>`;
+  d.showModal();
+  d.querySelector('.menu-item')?.focus();
 }
 
 // Zahlungserinnerung über die Teilen-Funktion (oder Zwischenablage)
@@ -640,9 +706,12 @@ async function remind(fromId) {
   const me = myMember(g)?.id;
   const d = debtsOf(g).debts.find(x => x.from === fromId && x.to === me); if (!d) return;
   const text = `Hi ${memberName(g, fromId)}, kleine Erinnerung: Für „${g.name}“ bekomme ich von dir noch ${fmt(d.cents)}. Den Stand siehst du in PookieWise. Danke!`;
+  closeDialog();
   try {
-    if (navigator.share) await navigator.share({ text });
+    if (navigator.share) { await navigator.share({ text }); toast(`Erinnerung an ${memberName(g, fromId)} geteilt`); }
     else { await navigator.clipboard.writeText(text); toast('Erinnerung kopiert. Füge sie im Messenger ein.'); }
+    lsSet(remindKey(g, fromId), C.today());
+    renderMain();
   } catch (err) { if (err.name !== 'AbortError') toast('Erinnerung konnte nicht geteilt werden.', { error: true }); }
 }
 
@@ -701,6 +770,46 @@ async function migrate() {
   } catch (err) { toast(errText(err, 'Die Übernahme'), { error: true }); }
 }
 
+/* ---------- Beispielgruppe (nur lokal, nicht änderbar) ---------- */
+const DEMO_ID = '__demo';
+function demoData() {
+  const d = n => { const x = new Date(); x.setDate(x.getDate() - n); return C.isoDate(x); };
+  const M = [{ id: 'd1', name: firstName() || 'Du', uid: S.user.uid }, { id: 'd2', name: 'Lena', uid: 'demo-lena' }, { id: 'd3', name: 'Tom', uid: null }];
+  const group = { id: DEMO_ID, demo: true, name: 'Beispiel: Italien-Urlaub', icon: '🏖️', kind: 'event', startDate: d(10), endDate: d(2), potEnabled: true, potTargetCents: 20000,
+    members: M, memberUids: [S.user.uid, 'demo-lena'], inviteCode: 'beispiel', createdBy: 'demo-lena' };
+  const all = ['d1', 'd2', 'd3'];
+  const ex = [['x1', 'expense', 'Ferienwohnung Florenz', 48000, 'd1', 9, 'lodging', all], ['x2', 'expense', 'Pizza am Abend', 6450, 'd2', 8, 'food', all],
+    ['x3', 'expense', 'Mietwagen', 21000, 'd3', 8, 'transport', all], ['x4', 'contribution', 'Einzahlung in die Kasse', 20000, 'd1', 7, 'other', [POT]],
+    ['x5', 'contribution', 'Einzahlung in die Kasse', 15000, 'd2', 7, 'other', [POT]], ['x6', 'potExpense', 'Supermarkt', 8730, POT, 6, 'groceries', all],
+    ['x7', 'expense', 'Uffizien', 7500, 'd1', 5, 'fun', all], ['x8', 'expense', 'Gelato', 1200, 'd2', 4, 'food', ['d1', 'd2']],
+    ['x9', 'settlement', 'Ausgleichszahlung', 5000, 'd3', 3, 'other', ['d1']]];
+  const expenses = ex.map(([id, type, desc, amt, payer, ago, category, parts]) => ({
+    id, type, desc, amountCents: amt, payerId: payer, date: d(ago), category,
+    mode: type === 'expense' || type === 'potExpense' ? 'equal' : 'exact',
+    shares: type === 'expense' || type === 'potExpense' ? C.computeEqualShares(amt, parts) : [{ memberId: parts[0], cents: amt }],
+  })).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return { group, expenses };
+}
+function startDemo() {
+  const { group } = demoData();
+  S.demo = true;
+  S.groups = [group, ...S.groups.filter(g => !g.demo)];
+  S.tab = 'overview';
+  selectGroup(DEMO_ID);
+}
+function endDemo(thenNew) {
+  S.demo = false;
+  S.groups = S.groups.filter(g => !g.demo);
+  S.activeGroupId = S.groups[0]?.id || null; S.tab = 'overview';
+  subscribeExpenses(); render(); syncRoute(true);
+  if (thenNew) actions.newGroup();
+}
+// Im Beispiel sind alle schreibenden Aktionen gesperrt
+const WRITES = new Set(['saveSettings', 'deleteOrLeaveGroup', 'copyInvite', 'shareInvite', 'renewInvite', 'addMember', 'addKnown', 'removeMember',
+  'claim', 'submitEntry', 'settleDebt', 'deleteExpense', 'applyRepeats', 'stopRepeat', 'remind', 'migrate']);
+const blockedInDemo = a => activeGroup()?.demo && !S.view && WRITES.has(a) &&
+  (toast('Das ist nur ein Beispiel, hier wird nichts gespeichert.', { action: 'Eigene Gruppe anlegen', onAction: () => endDemo(true) }), true);
+
 /* ---------- Ereignis-Verdrahtung (keine Inline-Handler) ---------- */
 const actions = {
   login, emailLogin,
@@ -738,8 +847,24 @@ const actions = {
   },
   clearFilter: () => { S.q = ''; S.filter = 'all'; renderMain(); $('entrySearch')?.focus(); },
   remind: d => remind(d.from),
+  debtMenu: d => debtMenu(d),
+  startDemo: () => startDemo(),
+  endDemo: () => endDemo(false),
+  demoToNew: () => endDemo(true),
+  addKnown: d => addMember(d.name),
+  applyRepeats: d => applyRepeats(d.id ? [d.id] : null),
+  stopRepeat: d => stopRepeat(d.id),
+  curChange: init => {
+    const g = activeGroup(), cur = formCur();
+    $('fxRow').hidden = cur === 'EUR';
+    $('fxCur').textContent = cur;
+    if (cur !== 'EUR' && !$('expRate').value) $('expRate').value = lsGet('pw_rate_' + cur) || '';
+    if (init !== true) { lsSet('pw_cur_' + g.id, cur === 'EUR' ? null : cur); if (cur !== 'EUR' && !$('expRate').value) $('expRate').focus(); }
+    updateSplitHint();
+  },
+  fillAmount: d => { $('expAmount').value = C.centsToInput(Number(d.cents)); delete $('expAmount').dataset.auto; $('expAmount').focus(); },
   potLink: () => actions.tab({ tab: 'balances' }),
-  settleCustom: d => { S.settlePair = { from: d.from, to: d.to, cents: Number(d.cents) || 0 }; go('add', { entryType: 'settlement' }); },
+  settleCustom: d => { closeDialog(); S.settlePair = { from: d.from, to: d.to, cents: Number(d.cents) || 0 }; go('add', { entryType: 'settlement' }); },
   dateQuick: d => {
     if (d.value === 'other') { $('expDate').hidden = false; $('expDate').focus(); try { $('expDate').showPicker(); } catch {} }
     else { $('expDate').value = d.value === 'today' ? C.today() : yesterday(); $('expDate').hidden = true; }
@@ -749,12 +874,14 @@ document.addEventListener('submit', e => {
   const a = e.target.dataset?.submit;
   if (!a) return;
   e.preventDefault();
+  if (blockedInDemo(a)) return;
   actions[a]?.(e.target.dataset, e.target, e);
 });
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-action]');
   if (!t || !actions[t.dataset.action]) return;
   if (t.tagName === 'A' || t.closest('form[data-submit]')) e.preventDefault();
+  if (blockedInDemo(t.dataset.action)) return;
   actions[t.dataset.action](t.dataset, t, e);
 });
 document.addEventListener('change', e => { const a = e.target.dataset?.change; if (a) actions[a]?.({ ...e.target.dataset, value: e.target.value }, e.target); });
@@ -855,7 +982,8 @@ function renderSidebar() {
   $('groupSwitch').setAttribute('aria-label', g ? `Gruppe wechseln, aktuell: ${g.name}` : 'Gruppen');
 }
 
-function openGroupSheet() {
+function openGroupSheet(refresh) {
+  if (!refresh) refreshBalances(60000);
   const d = $('dlg');
   d.className = 'sheet';
   d.innerHTML = `<div class="dlg-body"><div class="card-h"><h2 id="dlgTitle">Deine Gruppen</h2>
@@ -897,8 +1025,11 @@ function renderMain() {
   else if (g.members.length < 2 && !g.potEnabled && S.tab !== 'overview') body = renderNeedPeople(g);
   else if (S.tab === 'add') body = renderForm(g);
   else if (S.tab === 'balances') body = renderBalances(g);
-  else if (S.tab === 'expenses') body = periodNav(g) + renderExpenses(g, vis);
+  else if (S.tab === 'expenses') body = periodNav(g) + renderDueRepeats(g) + renderExpenses(g, vis);
   else body = renderOverview(g, vis);
+  if (g.demo) body = `<div class="banner demo" role="note"><span><b>Beispielgruppe.</b> Schau dich in Ruhe um: Hier wird nichts gespeichert.</span>
+    <span class="form-actions" style="margin:0"><button type="button" class="btn small" data-action="demoToNew">${ic('plus')} Eigene Gruppe anlegen</button>
+    <button type="button" class="btn ghost small" data-action="endDemo">Beispiel schließen</button></span></div>` + body;
   html += `<div id="panel" role="tabpanel" ${S.tab === 'add' ? 'aria-label="Eintrag erfassen"' : `aria-labelledby="tab-${S.tab === 'settings' ? 'group' : S.tab}"`}>${body}</div>`;
 
   const focusId = document.activeElement?.id;
@@ -946,7 +1077,9 @@ function renderWelcome() {
     <div class="big" aria-hidden="true">👋</div>
     <h2>Willkommen, ${esc(firstName())}!</h2>
     <p>Leg deine erste Gruppe an, zum Beispiel für einen Urlaub, die WG oder den Haushalt.</p>
-    <button class="btn lg" data-action="newGroup">${ic('plus')} Gruppe anlegen</button>
+    <div class="form-actions" style="justify-content:center">
+      <button class="btn lg" data-action="newGroup">${ic('plus')} Gruppe anlegen</button>
+      <button class="btn secondary lg" data-action="startDemo">Beispielgruppe ansehen</button></div>
     <ol class="steps" style="max-width:340px;margin:24px auto 0;text-align:left">
       <li><span class="num">1</span><span class="s-text">Gruppe anlegen</span></li>
       <li><span class="num">2</span><span class="s-text">Die anderen per Link einladen</span></li>
@@ -1005,8 +1138,21 @@ function updateTargetLabel() {
   $('gTargetL').textContent = targetLabel(kind, $('gPeriod').value);
 }
 
+// Namen aus anderen Gruppen als Schnellauswahl
+function knownPeople(g) {
+  const have = new Set(g.members.map(m => m.name.toLowerCase()));
+  const seen = new Map();
+  for (const o of S.groups) if (o.id !== g.id && !o.demo) for (const m of o.members) {
+    const k = m.name.toLowerCase();
+    if (m.uid !== S.user.uid && !have.has(k) && !seen.has(k)) seen.set(k, m.name);
+  }
+  return [...seen.values()].slice(0, 8);
+}
 function addMemberForm(g, autofocus) {
-  return `<form class="row end" data-submit="addMember" novalidate style="margin-top:12px">
+  const known = knownPeople(g);
+  return (known.length ? `<div class="suggest"><span class="hint" style="margin:0">Aus deinen anderen Gruppen:</span>
+      <div class="chips">${known.map(n => `<button type="button" class="chip" data-action="addKnown" data-name="${esc(n)}" aria-label="${esc(n)} hinzufügen">${ic('plus')} ${esc(n)}</button>`).join('')}</div></div>` : '') +
+    `<form class="row end" data-submit="addMember" novalidate style="margin-top:12px">
       <div><label for="newMemberName" class="sr-only">Name der neuen Person</label>
       <input type="text" id="newMemberName" maxlength="40" placeholder="Name, z. B. Lena" ${autofocus ? 'autofocus' : ''}></div>
       <button class="btn fixed">${ic('plus')} Hinzufügen</button></form>`;
@@ -1070,19 +1216,21 @@ function renderExpenses(g, vis) {
   return `<div class="card" id="entriesCard" tabindex="-1" aria-label="Einträge">
     <div class="filters"><div class="search"><label for="entrySearch" class="sr-only">Einträge durchsuchen</label>${ic('search')}
       <input type="search" id="entrySearch" placeholder="Suchen, z. B. Pizza" value="${esc(S.q || '')}" data-input="filterEntries" autocomplete="off"></div>
-      <div class="chips" role="radiogroup" aria-label="Filter">${chip('all', 'Alle')}${chip('paid', 'Von mir bezahlt')}${chip('mine', 'Mit mir')}${chip('settle', 'Ausgleich & Kasse')}</div></div>
+      <div class="chips" role="radiogroup" aria-label="Filter">${chip('all', 'Alle')}${chip('paid', 'Von mir bezahlt')}${chip('mine', 'Ich bin beteiligt')}${chip('settle', 'Ausgleich & Kasse')}</div></div>
     <div id="entryList">${entryList(g, vis)}</div><p class="sr-only" role="status" id="entryCount"></p>
     <p class="note">Tippe auf einen Eintrag, um ihn zu ändern oder zu löschen.</p></div>`;
 }
 function entryList(g, vis) {
   const me = myMember(g)?.id;
   const q = (S.q || '').trim().toLowerCase(), f = S.filter || 'all';
+  const allPeriods = q && isRecurring(g);
+  if (allPeriods) vis = S.expenses; // Suche bei laufenden Gruppen über alle Zeiträume
   const plain = e => e.type === 'settlement' || e.type === 'contribution';
   const list = [...vis].reverse().filter(e =>
     (!q || [e.desc, cat(e.category).name, memberName(g, e.payerId)].some(t => t.toLowerCase().includes(q))) &&
     (f === 'all' || (f === 'paid' && e.payerId === me && !plain(e)) || (f === 'mine' && !plain(e) && e.shares.some(x => x.memberId === me)) || (f === 'settle' && plain(e))));
-  if (!list.length) return `<p class="empty" style="padding:16px 4px">Keine passenden Einträge${isRecurring(g) ? ' in diesem Zeitraum' : ''}. <button type="button" class="btn ghost small" data-action="clearFilter">Filter zurücksetzen</button></p>`;
-  let lastDay = null, html = '';
+  if (!list.length) return `<p class="empty" style="padding:16px 4px">Keine passenden Einträge${isRecurring(g) && !allPeriods ? ' in diesem Zeitraum' : ''}. <button type="button" class="btn ghost small" data-action="clearFilter">Filter zurücksetzen</button></p>`;
+  let lastDay = null, html = allPeriods ? `<p class="hint" style="margin:0 0 4px">Suche in allen ${g.period === 'week' ? 'Wochen' : 'Monaten'}.</p>` : '';
   for (const e of list) {
     if (e.date !== lastDay) { html += `<h3 class="day-h">${esc(dayLabel(e.date))}</h3>`; lastDay = e.date; }
     let icon, title, sub, mine = '';
@@ -1104,6 +1252,8 @@ function entryList(g, vis) {
       const share = e.shares.find(s => s.memberId === me)?.cents || 0;
       mine = share ? `<small><span class="desk-only">dein Anteil </span><span class="mob-only">du: </span>${fmt(share)}</small>` : '<small>ohne dich</small>';
     }
+    if (e.fx) sub += ` · ${fmtCur(e.fx.amount, e.fx.cur)}`;
+    if (e.repeat) sub += ` · <span class="rep">${ic('repeat')}<span class="sr-only">wiederkehrend</span></span>`;
     if (e._pending) sub += ` · <span class="pending">${ic('cloud')} wird übertragen</span>`;
     const plain = e.type === 'settlement' || e.type === 'contribution';
     html += `<button class="entry ${plain ? 'muted' : ''}" data-action="editExpense" data-id="${esc(e.id)}" aria-label="${esc((plain ? title : e.desc) + ', ' + fmt(e.amountCents))} – bearbeiten">
@@ -1135,7 +1285,7 @@ function prefillSettlement(initial) {
     const pair = S.settlePair; S.settlePair = null;
     d = pair ? debts.find(x => x.from === pair.from && x.to === pair.to) || pair : debts.find(x => x.from === me || x.to === me) || debts[0];
     if (d) $('setFrom').value = d.from;
-    if (pair) { $('setTo').value = pair.to; $('expAmount').value = ''; $('setHint').textContent = d.cents ? `Offen sind ${fmt(d.cents)}. Trag ein, wie viel davon bezahlt wurde.` : ''; return; }
+    if (pair) { $('setTo').value = pair.to; $('expAmount').value = ''; $('setHint').textContent = d.cents ? `Offen sind ${fmt(d.cents)}. Wie viel davon wurde bezahlt?` : ''; quickFill(d.cents); return; }
   } else d = debts.find(x => x.from === $('setFrom').value);
   const from = $('setFrom').value;
   if (d) {
@@ -1144,8 +1294,27 @@ function prefillSettlement(initial) {
   } else if ($('setTo').value === from) $('setTo').value = g.members.find(m => m.id !== from)?.id || POT;
   const nom = id => id === me ? 'Du' : memberName(g, id);
   const dat = id => id === me ? 'dir' : memberName(g, id);
-  $('setHint').textContent = d ? `Offen: ${nom(d.from)} ${d.from === me ? 'schuldest' : 'schuldet'} ${dat(d.to)} noch ${fmt(d.cents)}. Betrag ist vorausgefüllt.`
+  quickFill(d?.cents);
+  $('setHint').textContent = d ? `Offen: ${nom(d.from)} ${d.from === me ? 'schuldest' : 'schuldet'} ${dat(d.to)} noch ${fmt(d.cents)}.`
     : `${from === me ? 'Du hast' : nom(from) + ' hat'} keine offenen Schulden.`;
+}
+
+// Fremdwährung: Betrag wird zum eingegebenen Kurs in Euro umgerechnet
+const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'CZK', 'PLN', 'HUF', 'DKK', 'SEK', 'NOK', 'TRY', 'HRK', 'JPY', 'THB'];
+const fmtCur = (c, cur) => (c / 100).toLocaleString('de-DE', { style: 'currency', currency: cur });
+const formCur = () => $('expCur')?.value || 'EUR';
+const formRate = () => parseFloat(($('expRate')?.value || '').replace(',', '.'));
+function formAmount() {
+  const v = parseAmount($('expAmount').value);
+  if (formCur() === 'EUR' || isNaN(v)) return v;
+  const r = formRate();
+  return r > 0 ? Math.round(v * r) : NaN;
+}
+
+// Schnellwahl für Ausgleichsbeträge
+function quickFill(cents) {
+  $('setQuick').innerHTML = cents > 1 ? [['Alles', cents], ['Hälfte', Math.round(cents / 2)]].map(([l, c]) =>
+    `<button type="button" class="chip" data-action="fillAmount" data-cents="${c}">${l} · ${fmt(c)}</button>`).join('') : '';
 }
 
 function dateField() {
@@ -1173,7 +1342,7 @@ function renderForm(g) {
   if (g.members.length >= 2 || pot) types.push(['settlement', 'Ausgleich']);
   if (!types.some(t => t[0] === S.entryType)) S.entryType = 'expense';
   const type = S.entryType;
-  const titles = { expense: editing ? 'Ausgabe bearbeiten' : 'Neue Ausgabe', contribution: editing ? 'Einzahlung bearbeiten' : 'In die Kasse einzahlen', settlement: editing ? 'Ausgleich bearbeiten' : 'Ausgleichszahlung erfassen' };
+  const titles = { expense: editing ? 'Ausgabe bearbeiten' : 'Neue Ausgabe', contribution: editing ? 'Einzahlung bearbeiten' : 'In die Kasse einzahlen', settlement: editing ? 'Ausgleich bearbeiten' : 'Ausgleich erfassen' };
   const me = myMember(g)?.id;
 
   let html = `<form class="card" id="entryForm" data-submit="submitEntry" novalidate>
@@ -1181,7 +1350,12 @@ function renderForm(g) {
     ${!editing && types.length > 1 ? `<div class="field"><div class="seg" role="radiogroup" aria-label="Art des Eintrags">${types.map(([k, l]) =>
       `<label><input type="radio" name="eType" value="${k}" data-change="entryType" ${k === type ? 'checked' : ''}>${l}</label>`).join('')}</div></div>` : ''}
     <div class="field"><label for="expAmount">Betrag</label>
-      <div class="amount-wrap"><input type="text" id="expAmount" class="amount-input" inputmode="decimal" placeholder="0,00" autocomplete="off" data-input="updateSplitHint"><span class="cur" aria-hidden="true">€</span></div></div>`;
+      <div class="amount-wrap"><input type="text" id="expAmount" class="amount-input" inputmode="decimal" placeholder="0,00" autocomplete="off" data-input="updateSplitHint" ${type === 'settlement' ? 'aria-describedby="setHint"' : ''}>${type === 'expense'
+        ? `<select id="expCur" class="cur-select" aria-label="Währung" data-change="curChange">${CURRENCIES.map(c => `<option value="${c}">${c === 'EUR' ? '€' : c}</option>`).join('')}</select>`
+        : '<span class="cur" aria-hidden="true">€</span>'}</div>
+      ${type === 'expense' ? `<div class="fx-row" id="fxRow" hidden><label for="expRate">Kurs: 1 <span id="fxCur"></span> =</label>
+        <input type="text" id="expRate" inputmode="decimal" placeholder="0,92" data-input="updateSplitHint" aria-describedby="fxEur"><span>€</span><span class="hint" id="fxEur" style="margin:0"></span></div>` : ''}
+      ${type === 'settlement' ? '<p class="hint" id="setHint"></p><div class="chips quick" id="setQuick"></div>' : ''}</div>`;
 
   if (type === 'expense') {
     html += `<div class="field"><label for="expDesc">Wofür? <span class="zero">(optional)</span></label>
@@ -1192,6 +1366,8 @@ function renderForm(g) {
     <div class="field"><label for="expPayer">Bezahlt von</label>
       <select id="expPayer">${memberOptions(g, pot, me)}</select></div>
     ${dateField()}
+    ${isRecurring(g) ? `<label class="switch-row"><input type="checkbox" id="expRepeat">
+      <span><b>${g.period === 'week' ? 'Jede Woche' : 'Jeden Monat'} wiederholen</b><small>Für Miete, Strom oder Abos: PookieWise schlägt die Ausgabe ${g.period === 'week' ? 'jede Woche' : 'jeden Monat'} zum Übernehmen vor.</small></span></label>` : ''}
     <div class="field"><span class="label" id="modeL">Aufteilen</span>
       <div class="seg" role="radiogroup" aria-labelledby="modeL">
         <label><input type="radio" name="expMode" value="equal" data-change="renderParticipants" checked>Gleich</label>
@@ -1211,7 +1387,6 @@ function renderForm(g) {
     html += `<div class="row">
       <div class="field"><label for="setFrom">Wer hat gezahlt?</label><select id="setFrom" data-change="settleFrom">${memberOptions(g, pot, me)}</select></div>
       <div class="field"><label for="setTo">An wen?</label><select id="setTo">${memberOptions(g, pot)}</select></div></div>
-      <p class="hint" id="setHint" style="margin:-6px 0 12px"></p>
       ${dateField()}`;
   }
   if (editing) html += `<div class="delete-row"><button type="button" class="btn ghost danger small" data-action="deleteExpense" data-id="${esc(editing.id)}">${ic('trash')} Eintrag löschen</button></div>`;
@@ -1233,7 +1408,12 @@ function initForm(g) {
       $('expPayer').value = editing.payerId;
       document.querySelector(`input[name=expMode][value=${editing.mode}]`).checked = true;
       document.querySelector(`input[name=expCat][value=${cat(editing.category).id}]`).checked = true;
+      if ($('expRepeat')) $('expRepeat').checked = !!editing.repeat;
+      if (editing.fx) { $('expCur').value = editing.fx.cur; $('expAmount').value = C.centsToInput(editing.fx.amount); $('expRate').value = String(editing.fx.rate).replace('.', ','); }
+    } else {
+      $('expCur').value = lsGet('pw_cur_' + g.id) || 'EUR';
     }
+    actions.curChange(true);
     actions.catPick();
     renderParticipants(editing);
   } else if (type === 'contribution') {
@@ -1276,7 +1456,8 @@ function updateSplitHint() {
   if ($('expAmount')) delete $('expAmount').dataset.auto;
   const hint = $('splitHint'); if (!hint) return;
   const mode = document.querySelector('input[name=expMode]:checked').value;
-  const amount = parseAmount($('expAmount').value);
+  const amount = formAmount();
+  if ($('fxEur')) $('fxEur').textContent = formCur() !== 'EUR' && !isNaN(amount) ? `= ${fmt(amount)}` : '';
   const checked = [...document.querySelectorAll('.p-check:checked')].map(cb => cb.dataset.mid);
   const valOf = mid => document.querySelector(`.p-val[data-mid="${mid}"]`).value;
   hint.className = 'split-hint';
@@ -1313,8 +1494,7 @@ function renderBalances(g) {
     : debts.map(d => `<div class="list-row debt">
         <span class="grow"><span class="who">${nm(d.from)}</span> <span class="arrow">${ic('arrow', 'an')}</span> <span class="who">${nm(d.to)}</span></span>
         <span class="amt">${fmt(d.cents)}</span>
- <span class="debt-actions">${d.to === me ? `<button type="button" class="btn ghost small" data-action="remind" data-from="${esc(d.from)}" aria-label="${esc(memberName(g, d.from))} an ${fmt(d.cents)} erinnern">${ic('bell')} Erinnern</button>` : ''}<button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}">Teilbetrag</button>
-        <button type="button" class="btn small ${d.from === me || d.to === me ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}" aria-label="Als bezahlt markieren: ${esc(memberName(g, d.from))} an ${esc(memberName(g, d.to))}, ${fmt(d.cents)}">${ic('check')} Bezahlt</button></span>
+        ${debtActions(g, d, me)}${remindedNote(g, d, me)}
       </div>`).join('');
   let potHtml = '';
   if (pot) {
@@ -1348,7 +1528,7 @@ function renderBalances(g) {
 function renderOverview(g, vis) {
   const st = C.spendingStats(vis);
   const me = myMember(g);
-  let html = renderChecklist(g) + renderStanding(g, me) + periodNav(g);
+  let html = renderChecklist(g) + renderStanding(g, me) + renderDueRepeats(g) + periodNav(g);
   const kpis = [];
   kpis.push(kpi(isRecurring(g) ? `Ausgaben ${g.period === 'week' ? 'diese Woche' : 'im Monat'}` : 'Ausgaben gesamt', fmt(st.total), `${st.count} ${st.count === 1 ? 'Ausgabe' : 'Ausgaben'}`));
   if (isRecurring(g)) {
@@ -1376,6 +1556,52 @@ function renderOverview(g, vis) {
   return html + '</div>';
 }
 
+// Fällige Wiederholungen: letzte Ausgabe jeder Serie, die vor der aktuellen Periode liegt
+function dueRepeats(g) {
+  if (!isRecurring(g)) return [];
+  const now = C.periodKey(C.today(), g.period);
+  if (cursor(g) !== now) return [];
+  const latest = {};
+  for (const e of S.expenses) if (e.series && (!latest[e.series] || e.date >= latest[e.series].date)) latest[e.series] = e;
+  return Object.values(latest).filter(e => e.repeat && C.periodKey(e.date, g.period) < now);
+}
+function repeatDate(g, e) {
+  const now = C.periodKey(C.today(), g.period);
+  if (g.period === 'week') {
+    const off = C.daysBetween(C.periodKey(e.date, 'week'), e.date) - 1;
+    const d = new Date(now + 'T00:00:00'); d.setDate(d.getDate() + off); return C.isoDate(d);
+  }
+  const [y, m] = now.split('-').map(Number);
+  const day = Math.min(Number(e.date.slice(8)), new Date(y, m, 0).getDate());
+  return `${now}-${String(day).padStart(2, '0')}`;
+}
+function applyRepeats(ids) {
+  const g = activeGroup(); if (!g) return;
+  const due = dueRepeats(g).filter(e => !ids || ids.includes(e.id));
+  const created = due.map(e => { const id = newExpenseId(g.id); saveExpense(g, id, { ...stripMeta(e), date: repeatDate(g, e) }); return id; });
+  if (!created.length) return;
+  toast(created.length === 1 ? `„${due[0].desc}“ übernommen` : `${created.length} wiederkehrende Ausgaben übernommen`, {
+    action: 'Rückgängig', onAction: () => created.forEach(id => write(fs.deleteDoc(fs.doc(expCol(g.id), id)))),
+  });
+}
+function stopRepeat(id) {
+  const g = activeGroup(); const e = S.expenses.find(x => x.id === id); if (!g || !e) return;
+  saveExpense(g, id, { ...stripMeta(e), repeat: false });
+  toast(`„${e.desc}“ wird nicht mehr vorgeschlagen`, { action: 'Rückgängig', onAction: () => saveExpense(g, id, { ...stripMeta(e), repeat: true }) });
+}
+function renderDueRepeats(g) {
+  const due = dueRepeats(g);
+  if (!due.length) return '';
+  const label = C.periodLabel(C.periodKey(C.today(), g.period), g.period);
+  return `<section class="card" aria-labelledby="repL"><div class="card-h"><h2 id="repL">${ic('repeat')} Wiederkehrend für ${esc(label)}</h2>
+      ${due.length > 1 ? `<button type="button" class="btn small" data-action="applyRepeats">Alle übernehmen</button>` : ''}</div>
+    ${due.map(e => `<div class="list-row debt"><span class="grow"><span class="who">${esc(e.desc)}</span><span class="hint" style="display:block;margin:0">${esc(memberName(g, e.payerId))} · zuletzt ${esc(new Date(e.date + 'T00:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'short' }))}</span></span>
+      <span class="amt">${fmt(e.amountCents)}</span>
+      <span class="debt-actions"><button type="button" class="btn ghost small" data-action="stopRepeat" data-id="${esc(e.id)}" aria-label="${esc(e.desc)} nicht mehr wiederholen">Nicht mehr</button>
+      <button type="button" class="btn small ${due.length > 1 ? 'secondary' : ''}" data-action="applyRepeats" data-id="${esc(e.id)}" aria-label="${esc(e.desc)} für ${esc(label)} übernehmen">${ic('plus')} Übernehmen</button></span></div>`).join('')}
+  </section>`;
+}
+
 // Erste Schritte, bis die Gruppe eingerichtet ist
 function renderChecklist(g) {
   const people = g.members.length >= 2, invited = g.memberUids.length >= 2, first = S.expenses.some(C.isSpending);
@@ -1401,8 +1627,7 @@ function renderStanding(g, me) {
     const other = esc(memberName(g, out ? d.to : d.from));
     return `<div class="list-row debt"><span class="grow">${out ? `Du zahlst <b>${other}</b>` : `<b>${other}</b> zahlt dir`}</span>
       <span class="amt ${out ? 'neg' : 'pos'}">${fmt(d.cents)}</span>
-      <span class="debt-actions">${out ? '' : `<button type="button" class="btn ghost small" data-action="remind" data-from="${esc(d.from)}" aria-label="${other} an ${fmt(d.cents)} erinnern">${ic('bell')} Erinnern</button>`}<button type="button" class="btn ghost small" data-action="settleCustom" data-from="${esc(d.from)}" data-to="${esc(d.to)}" aria-label="Teilbetrag ${out ? `an ${other}` : `von ${other}`} erfassen">Teilbetrag</button>
-      <button type="button" class="btn small ${out ? '' : 'secondary'}" data-action="settleDebt" data-from="${esc(d.from)}" data-to="${esc(d.to)}" data-cents="${d.cents}" aria-label="${out ? `Bezahlt: ${fmt(d.cents)} an ${other}` : `Erhalten: ${fmt(d.cents)} von ${other}`}">${ic('check')} ${out ? 'Bezahlt' : 'Erhalten'}</button></span></div>`;
+      ${debtActions(g, d, me.id)}${remindedNote(g, d, me.id)}</div>`;
   }).join('');
   return `<section class="card" aria-labelledby="standL"><div class="hero">
       <div><div class="h-label" id="standL">Dein Stand${isRecurring(g) ? ' über alle Zeiträume' : ''}</div><div class="h-value">${value}</div>
